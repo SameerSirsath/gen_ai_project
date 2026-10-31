@@ -48,50 +48,51 @@ class Embedder:
     # ─────────────────────────────────────────────
 
     def _init_backend(self):
-        """Try each backend in priority order."""
+        """Initialize embedding backend based on settings.EMBEDDING_BACKEND."""
+        from config import settings
 
-        # ── 1. OpenAI ──────────────────────────────
-        if OPENAI_API_KEY:
-            try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=OPENAI_API_KEY)
-                self._openai_client.models.list()
-                self.provider   = "openai"
-                self.dimensions = 1536
-                print(f"    [EMBED] Using OpenAI ({EMBEDDING_MODEL_OPENAI}, {self.dimensions}d)")
-                return
-            except Exception as e:
-                print(f"    [EMBED] OpenAI init failed: {e}")
+        chosen = (settings.EMBEDDING_BACKEND or "gemini").lower()
 
-        # ── 2. Google Gemini ────────────────────────
-        if GOOGLE_API_KEY:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=GOOGLE_API_KEY)
-                test_res = genai.embed_content(
-                    model=EMBEDDING_MODEL_GOOGLE,
-                    content="healthcheck",
-                    task_type="retrieval_document"
-                )
-                self._genai     = genai
-                self.provider   = "google"
-                self.dimensions = len(test_res["embedding"])
-                print(f"    [EMBED] Using Google ({EMBEDDING_MODEL_GOOGLE}, {self.dimensions}d)")
-                return
-            except Exception as e:
-                print(f"    [EMBED] Google init failed: {e}")
+        # ── 1. Google Gemini ────────────────────────
+        if chosen == "gemini":
+            key = settings.GEMINI_API_KEY or settings.GOOGLE_API_KEY
+            if key:
+                try:
+                    import google.generativeai as genai
+                    genai.configure(api_key=key)
+                    test_res = genai.embed_content(
+                        model=settings.EMBEDDING_MODEL_GOOGLE,
+                        content="healthcheck",
+                        task_type="retrieval_document"
+                    )
+                    self._genai     = genai
+                    self.provider   = "google"
+                    self.dimensions = len(test_res["embedding"])
+                    print(f"    [EMBED] Using Google ({settings.EMBEDDING_MODEL_GOOGLE}, {self.dimensions}d)")
+                    return
+                except Exception as e:
+                    print(f"    [EMBED] Google init failed ({e}), falling back to local ONNX...")
 
-        # ── 3. ChromaDB built-in (onnxruntime) ─────
-        # ChromaDB ships its own embedding function that runs MiniLM via
-        # onnxruntime — no torch required, models auto-download on first use.
+        # ── 2. OpenAI ──────────────────────────────
+        elif chosen == "openai":
+            if settings.OPENAI_API_KEY:
+                try:
+                    from openai import OpenAI
+                    self._openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                    self._openai_client.models.list()
+                    self.provider   = "openai"
+                    self.dimensions = 1536
+                    print(f"    [EMBED] Using OpenAI ({settings.EMBEDDING_MODEL_OPENAI}, {self.dimensions}d)")
+                    return
+                except Exception as e:
+                    print(f"    [EMBED] OpenAI init failed ({e}), falling back to local ONNX...")
+
+        # ── 3. ChromaDB built-in (onnxruntime) / Local MiniLM (Default free path) ──
         try:
-            from chromadb.utils.embedding_functions import (
-                ONNXMiniLM_L6_V2,
-            )
+            from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
             global _CHROMA_EF
             if _CHROMA_EF is None:
                 _CHROMA_EF = ONNXMiniLM_L6_V2()
-            # Warm-up call to trigger model download
             _ = _CHROMA_EF(["warmup"])
             self._chroma_ef = _CHROMA_EF
             self.provider   = "chromadb-onnx"

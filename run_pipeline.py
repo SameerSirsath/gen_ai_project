@@ -42,8 +42,9 @@ from pipeline.step2_document_collector import collect_documents
 from pipeline.step3_linkedin_posts     import collect_linkedin_data
 from pipeline.step4_preprocessor      import preprocess
 from pipeline.step5_storage           import save_all
-from pipeline.vector_store            import VectorStore
-from pipeline.config                  import OUTPUT_DIR
+from pipeline.vector_store            import get_vector_store, VectorStore
+from pipeline.llm                     import get_llm, get_embedder
+from config                           import settings, OUTPUT_DIR
 
 
 BANNER = """
@@ -76,10 +77,11 @@ def run_pipeline(
     query:                 str  = "",
 ):
     print(BANNER)
+    print(settings.resolved_summary())
     print(f"\n  🎯 Target Company  : {company_name}")
     print(f"  🌐 Company URL     : {company_url or '(auto-detect)'}")
     print(f"  📁 Docs Folder     : {docs_folder or os.getcwd()}")
-    print(f"  📦 Vector DB       : ./chroma_db/ (ChromaDB local)")
+    print(f"  📦 Vector DB       : {settings.VECTOR_BACKEND.upper()} ({'local' if settings.VECTOR_BACKEND=='chroma' else 'cloud serverless'})")
     print()
 
     if not docs_folder:
@@ -132,10 +134,21 @@ def run_pipeline(
 
     # ── Step 6: Vector Store ──────────────────────────────────────
     if not skip_vector_store:
-        _print_step(6, "Vector Store — Embed Chunks → ChromaDB (local)")
-        vs = VectorStore(company_name)
-        stored = vs.upsert_chunks(preprocessed["records"])
-        db_info = vs.info()
+        _print_step(6, f"Vector Store — Embed Chunks → {settings.VECTOR_BACKEND.upper()}")
+        vs = get_vector_store(namespace=company_name)
+        if hasattr(vs, "upsert_chunks"):
+            stored = vs.upsert_chunks(preprocessed["records"])
+            db_info = vs.info() if hasattr(vs, "info") else {}
+        else:
+            from pipeline.vector_store import Document
+            docs = [
+                Document(id=r.get("chunk_id", f"c_{i}"), text=r.get("text", ""), metadata=r)
+                for i, r in enumerate(preprocessed["records"])
+                if r.get("text", "").strip()
+            ]
+            vs.add_documents(docs, namespace=company_name)
+            stored = len(docs)
+            db_info = {"collection": company_name, "backend": settings.VECTOR_BACKEND}
     else:
         _print_step(6, "Vector Store [SKIPPED]")
         db_info = {}
@@ -146,7 +159,7 @@ def run_pipeline(
         print(f"\n{'─'*62}")
         print(f"  🔍 Query: {query}")
         print(f"{'─'*62}")
-        vs = VectorStore(company_name)
+        vs = get_vector_store(namespace=company_name)
         results = vs.query(query)
         _print_query_results(results)
 

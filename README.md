@@ -1,6 +1,56 @@
 # 🚀 AI-Powered Sales Outreach Pipeline
 
-> **Autonomous multi-agent sales intelligence & factually grounded outreach platform using RAG, 3-layer OCR, and local vector storage.**
+> **Default**: ChromaDB (local) + Gemini/ONNX, fully free tier.  
+> **Optional**: Pinecone + Groq via config flags for cloud/production.
+
+---
+
+## ⚖️ Stack Alignment: Claimed vs. Implemented
+
+| Component | Claimed (Slides / Concept) | Implemented (Codebase) | Configuration Switch | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Vector Store** | Pinecone Cloud Serverless | ChromaDB (local persistent HNSW) + Pinecone Client v3+ | `VECTOR_BACKEND=chroma` / `pinecone` | ✅ Both supported |
+| **LLM Engine** | Groq (LLaMA 3.1 70B) | Google Gemini / OpenAI / Groq LLaMA 3.1 / Local ONNX | `LLM_BACKEND=gemini` / `groq` / `openai` / `onnx` | ✅ Both supported |
+| **Embeddings** | 3072d dense embeddings | Gemini (3072d) / OpenAI (1536d) / ONNX MiniLM (384d) | `EMBEDDING_BACKEND=gemini` / `openai` / `local` | ✅ Both supported |
+| **Orchestration**| LangChain Framework | Native Protocol-driven Multi-Agent RAG Pipeline | Direct structured schema execution | ✅ Clean native implementation |
+
+---
+
+## 🛠️ How to Switch to Pinecone & Groq (Cloud Production Stack)
+
+To run the pipeline with the cloud production stack (Pinecone + Groq LLaMA 3.1):
+
+```bash
+# 1. Configure Pinecone credentials
+export VECTOR_BACKEND=pinecone
+export PINECONE_API_KEY="your-pinecone-key"
+export PINECONE_INDEX_NAME="ai-sales"
+export PINECONE_ENV="us-east-1"
+
+# 2. Configure Groq LLaMA 3.1 credentials
+export LLM_BACKEND=groq
+export GROQ_API_KEY="your-groq-key"
+export GROQ_MODEL="llama-3.1-70b-versatile"
+
+# 3. Execute pipeline
+python run_pipeline.py --company "Apple"
+```
+
+For Windows PowerShell:
+```powershell
+$env:VECTOR_BACKEND="pinecone"
+$env:PINECONE_API_KEY="your-pinecone-key"
+$env:PINECONE_INDEX_NAME="ai-sales"
+$env:LLM_BACKEND="groq"
+$env:GROQ_API_KEY="your-groq-key"
+$env:GROQ_MODEL="llama-3.1-70b-versatile"
+python run_pipeline.py --company "Apple"
+```
+
+To run 100% locally on the free tier with no cloud keys:
+```bash
+VECTOR_BACKEND=chroma LLM_BACKEND=onnx EMBEDDING_BACKEND=local python run_pipeline.py
+```
 
 ---
 

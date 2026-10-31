@@ -1,114 +1,69 @@
 """
-config.py — Central configuration for the entire AI Sales pipeline.
-
-API keys are loaded automatically from the .env file in the project root.
-You can also override any value by setting it as an environment variable.
+pipeline/config.py — Forwarding layer to root config.py for backwards compatibility.
 """
 
-import sys
+from __future__ import annotations
+
 import os
-from pathlib import Path
+import sys
 
-# ── Ensure UTF-8 output on Windows console (prevents cp1252 charmap errors) ──
-if sys.stdout and hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-if sys.stderr and hasattr(sys.stderr, "reconfigure"):
-    try:
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BASE not in sys.path:
+    sys.path.insert(0, _BASE)
 
-# ── Auto-load .env from project root ──────────────────────────────
-try:
-    from dotenv import load_dotenv
-    _env_path = Path(__file__).parent.parent / ".env"
-    load_dotenv(dotenv_path=_env_path, override=False)
-    if _env_path.exists():
-        print(f"[CONFIG] Loaded .env from: {_env_path}")
-except ImportError:
-    pass  # python-dotenv not installed — use OS environment variables only
+from config import settings, Settings
 
-_BASE = os.path.dirname(os.path.dirname(__file__))   # project root
+# Forward all settings as module-level constants for existing pipeline imports
+VECTOR_BACKEND = settings.VECTOR_BACKEND
+LLM_BACKEND = settings.LLM_BACKEND
+EMBEDDING_BACKEND = settings.EMBEDDING_BACKEND
+EMBEDDING_DIM = settings.EMBEDDING_DIM
 
-# ═══════════════════════════════════════════════════════════════
-# 1. API KEYS
-#    Set as environment variables (recommended) or paste directly.
-# ═══════════════════════════════════════════════════════════════
-OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
-GOOGLE_API_KEY    = os.getenv("GOOGLE_API_KEY", "")
-SERPAPI_KEY       = os.getenv("SERPAPI_KEY", "")
-PROXYCURL_API_KEY = os.getenv("PROXYCURL_API_KEY", "")
-LINKEDIN_EMAIL    = os.getenv("LINKEDIN_EMAIL", "")
-LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "")
+PINECONE_API_KEY = settings.PINECONE_API_KEY
+PINECONE_INDEX_NAME = settings.PINECONE_INDEX_NAME
+PINECONE_ENV = settings.PINECONE_ENV
+GROQ_API_KEY = settings.GROQ_API_KEY
+GROQ_MODEL = settings.GROQ_MODEL
 
-# ═══════════════════════════════════════════════════════════════
-# 2. PATHS
-# ═══════════════════════════════════════════════════════════════
-OUTPUT_DIR   = os.path.join(_BASE, "output")
-CHROMA_DIR   = os.path.join(_BASE, "chroma_db")   # local vector DB lives here
+OPENAI_API_KEY = settings.OPENAI_API_KEY or ""
+GOOGLE_API_KEY = settings.GOOGLE_API_KEY or settings.GEMINI_API_KEY or ""
+SERPAPI_KEY = settings.SERPAPI_KEY or ""
+PROXYCURL_API_KEY = settings.PROXYCURL_API_KEY or ""
+LINKEDIN_EMAIL = settings.LINKEDIN_EMAIL or ""
+LINKEDIN_PASSWORD = settings.LINKEDIN_PASSWORD or ""
 
-# ═══════════════════════════════════════════════════════════════
-# 3. WEB SCRAPING
-# ═══════════════════════════════════════════════════════════════
-REQUEST_TIMEOUT    = 15
-REQUEST_DELAY      = int(os.getenv("REQUEST_DELAY", 2))
-MAX_PAGES_PER_SITE = 10
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-SEARCH_QUERIES = [
-    "{company} company overview",
-    "{company} products services",
-    "{company} recent news",
-    "{company} annual report filetype:pdf",
-    "{company} LinkedIn company",
-    "{company} press release",
-    "{company} leadership team CEO",
-    "{company} funding investment",
-]
+OUTPUT_DIR = settings.OUTPUT_DIR
+CHROMA_DIR = settings.CHROMA_DIR
+REQUEST_TIMEOUT = settings.REQUEST_TIMEOUT
+REQUEST_DELAY = settings.REQUEST_DELAY
+MAX_PAGES_PER_SITE = settings.MAX_PAGES_PER_SITE
+USER_AGENT = settings.USER_AGENT
+SEARCH_QUERIES = settings.SEARCH_QUERIES
 
-# ═══════════════════════════════════════════════════════════════
-# 4. PDF / OCR SETTINGS
-# ═══════════════════════════════════════════════════════════════
-OCR_DPI                  = 300
-OCR_LANGUAGE             = os.getenv("OCR_LANGUAGE", "eng")
-OCR_CONFIDENCE_THRESHOLD = 60
-OCR_EXTRACT_TABLES       = True
-TESSERACT_CMD            = os.getenv("TESSERACT_CMD", "")
+OCR_DPI = settings.OCR_DPI
+OCR_LANGUAGE = settings.OCR_LANGUAGE
+OCR_CONFIDENCE_THRESHOLD = settings.OCR_CONFIDENCE_THRESHOLD
+OCR_EXTRACT_TABLES = settings.OCR_EXTRACT_TABLES
+TESSERACT_CMD = settings.TESSERACT_CMD or ""
 
-# ═══════════════════════════════════════════════════════════════
-# 5. CHUNKING STRATEGY
-# ═══════════════════════════════════════════════════════════════
-CHUNK_SIZE_TOKENS    = int(os.getenv("CHUNK_SIZE_TOKENS", 400))
-CHUNK_OVERLAP_TOKENS = int(os.getenv("CHUNK_OVERLAP_TOKENS", 80))
-MIN_CHUNK_TOKENS     = 40
-CHUNKING_STRATEGY    = os.getenv("CHUNKING_STRATEGY", "auto")
+CHUNK_SIZE_TOKENS = settings.CHUNK_SIZE_TOKENS
+CHUNK_OVERLAP_TOKENS = settings.CHUNK_OVERLAP_TOKENS
+MIN_CHUNK_TOKENS = settings.MIN_CHUNK_TOKENS
+CHUNKING_STRATEGY = settings.CHUNKING_STRATEGY
 
-# ═══════════════════════════════════════════════════════════════
-# 6. EMBEDDING MODEL
-#
-#   Priority: openai → google → sentence-transformers (local, free)
-#   sentence-transformers runs 100% offline — no API key needed.
-# ═══════════════════════════════════════════════════════════════
-EMBEDDING_MODEL_OPENAI  = "text-embedding-3-small"   # 1536 dims
-EMBEDDING_MODEL_GOOGLE  = os.getenv("EMBEDDING_MODEL_GOOGLE", "models/gemini-embedding-001")     # 3072 dims
-EMBEDDING_MODEL_LOCAL   = "all-MiniLM-L6-v2"         # 384 dims, free & fast
-EMBEDDING_BATCH_SIZE    = 32     # chunks to embed per API call
+EMBEDDING_MODEL_OPENAI = settings.EMBEDDING_MODEL_OPENAI
+EMBEDDING_MODEL_GOOGLE = settings.EMBEDDING_MODEL_GOOGLE
+EMBEDDING_MODEL_LOCAL = settings.EMBEDDING_MODEL_LOCAL
+EMBEDDING_BATCH_SIZE = settings.EMBEDDING_BATCH_SIZE
 
-# ═══════════════════════════════════════════════════════════════
-# 7. CHROMADB  (local vector database — persisted to disk)
-#    One collection per company: "aisales_tesla", "aisales_microsoft", …
-# ═══════════════════════════════════════════════════════════════
-CHROMA_COLLECTION_PREFIX = "aisales"
-CHROMA_TOP_K             = int(os.getenv("CHROMA_TOP_K", 5))
+CHROMA_COLLECTION_PREFIX = settings.CHROMA_COLLECTION_PREFIX
+CHROMA_TOP_K = settings.CHROMA_TOP_K
+CHROMA_HNSW_M = settings.CHROMA_HNSW_M
+CHROMA_HNSW_CONSTRUCTION_EF = settings.CHROMA_HNSW_CONSTRUCTION_EF
+CHROMA_HNSW_SEARCH_EF = settings.CHROMA_HNSW_SEARCH_EF
 
-# ═══════════════════════════════════════════════════════════════
-# 8. PREPROCESSING (shared)
-# ═══════════════════════════════════════════════════════════════
-MIN_TEXT_LENGTH = 50      # discard raw records shorter than this (chars)
-MAX_TEXT_LENGTH = 5000    # char cap per chunk if tokenizer unavailable
+MIN_TEXT_LENGTH = settings.MIN_TEXT_LENGTH
+MAX_TEXT_LENGTH = settings.MAX_TEXT_LENGTH
+RECENCY_HALF_LIFE_DAYS = settings.RECENCY_HALF_LIFE_DAYS
+EVALUATOR_GROUNDING_THRESHOLD = settings.EVALUATOR_GROUNDING_THRESHOLD
+DIFFERENTIATION_SIM_THRESHOLD = settings.DIFFERENTIATION_SIM_THRESHOLD

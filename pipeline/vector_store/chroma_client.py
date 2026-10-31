@@ -1,304 +1,309 @@
 """
-chroma_client.py — Local ChromaDB Vector Store
+chroma_client.py — Local ChromaDB Vector Store implementing VectorStore Protocol.
 
-ChromaDB is a local, persistent vector database that lives entirely on disk.
-No cloud account, no API key, no Docker — just pip install chromadb.
-
-Data is stored in:  ./chroma_db/   (relative to project root)
-
-One ChromaDB collection per company:
-  "aisales_tesla"     → all Tesla chunks
-  "aisales_microsoft" → all Microsoft chunks
-
-Usage:
-  from pipeline.vector_store import VectorStore
-
-  vs = VectorStore("Tesla")
-  vs.upsert_chunks(chunks)                          # store
-  results = vs.query("What is their revenue?")      # search
-  vs.info()                                         # stats
-  vs.list_all_collections()                         # see all companies
+Configured with explicit HNSW parameters (M, construction_ef, search_ef)
+derived directly from the central settings rather than relying on silent defaults.
 """
+
+from __future__ import annotations
 
 import os
 import re
 import uuid
-import json
-from typing import Optional
+from typing import Any, Optional
 
-from ..config import CHROMA_DIR, CHROMA_COLLECTION_PREFIX, CHROMA_TOP_K
+import chromadb
+from config import settings
+
+from .base import Document, VectorStore as VectorStoreProtocol
 from .embedder import Embedder
 
 
-class VectorStore:
+class ChromaVectorStore:
     """
-    Local ChromaDB-backed vector store.
-    One instance = one company collection.
+    Local ChromaDB-backed vector store implementing VectorStore Protocol.
+    Manages collection-level storage and HNSW indexing.
     """
 
-    def __init__(self, company_name: str, embedder: Optional[Embedder] = None):
+    def __init__(
+        self,
+        company_name: str = "default",
+        embedder: Optional[Embedder] = None,
+        m: Optional[int] = None,
+        construction_ef: Optional[int] = None,
+        search_ef: Optional[int] = None,
+    ):
         """
+        Initialize Chroma store.
+
         Args:
-            company_name: Target company (e.g. "Tesla").
-                          Collection name = "aisales_tesla".
-            embedder:     Optional pre-created Embedder.
-                          A new one is created automatically if not provided.
+            company_name: Target company or namespace identifier.
+            embedder: Optional Embedder instance.
+            m: HNSW max connections per node (defaults to config: 32).
+            construction_ef: HNSW dynamic list size during construction (defaults to config: 200).
+            search_ef: HNSW search exploration factor (defaults to config: 100).
         """
-        self.company_name     = company_name
-        self.collection_name  = self._make_collection_name(company_name)
-        self.embedder         = embedder or Embedder()
-        self._client          = None
-        self._collection      = None
+        self.company_name = company_name
+        self.collection_name = self._make_collection_name(company_name)
+        self.embedder = embedder or Embedder()
+        self.hnsw_m = m if m is not None else settings.CHROMA_HNSW_M
+        self.hnsw_construction_ef = (
+            construction_ef if construction_ef is not None else settings.CHROMA_HNSW_CONSTRUCTION_EF
+        )
+        self.hnsw_search_ef = (
+            search_ef if search_ef is not None else settings.CHROMA_HNSW_SEARCH_EF
+        )
+
+        self._client: Optional[chromadb.PersistentClient] = None
+        self._collection = None
         self._init_chroma()
 
-    # ─────────────────────────────────────────────
-    # Initialisation
-    # ─────────────────────────────────────────────
-
     @staticmethod
-    def _make_collection_name(company_name: str) -> str:
-        """
-        ChromaDB collection names must match: ^[a-zA-Z0-9][a-zA-Z0-9_-]{1,60}$
-        """
-        safe = re.sub(r"[^a-zA-Z0-9_-]", "_", company_name.lower())
+    def _make_collection_name(name: str) -> str:
+        """Sanitize name to match ChromaDB requirements."""
+        safe = re.sub(r"[^a-zA-Z0-9_-]", "_", name.lower())
         safe = re.sub(r"_+", "_", safe).strip("_")
-        return f"{CHROMA_COLLECTION_PREFIX}_{safe}"[:62]
+        return f"{settings.CHROMA_COLLECTION_PREFIX}_{safe}"[:62]
 
-    def _init_chroma(self):
-        """Connect to / create the ChromaDB persistent client and collection."""
-        try:
-            import chromadb
-            from chromadb.config import Settings
+    def _init_chroma(self) -> None:
+        """Connect to or create the ChromaDB collection with explicit HNSW configuration."""
+        os.makedirs(settings.CHROMA_DIR, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=settings.CHROMA_DIR)
 
-            os.makedirs(CHROMA_DIR, exist_ok=True)
+        metadata = {
+            "company": self.company_name,
+            "embedding": self.embedder.provider,
+            "dims": str(self.embedder.dimensions),
+            "hnsw:space": "cosine",
+            "hnsw:M": self.hnsw_m,
+            "hnsw:construction_ef": self.hnsw_construction_ef,
+            "hnsw:search_ef": self.hnsw_search_ef,
+        }
 
-            self._client = chromadb.PersistentClient(path=CHROMA_DIR)
+        self._collection = self._client.get_or_create_collection(
+            name=self.collection_name,
+            metadata=metadata,
+        )
 
-            # Get or create the collection for this company
-            self._collection = self._client.get_or_create_collection(
-                name=self.collection_name,
+        # Dimension verification
+        if self._collection.count() > 0:
+            sample = self._collection.get(include=["embeddings"], limit=1)
+            if sample.get("embeddings") and len(sample["embeddings"]) > 0:
+                existing_dim = len(sample["embeddings"][0])
+                if existing_dim != self.embedder.dimensions:
+                    print(
+                        f"    [CHROMA] Dimension mismatch: collection has {existing_dim}d, "
+                        f"embedder has {self.embedder.dimensions}d. Recreating collection..."
+                    )
+                    self._client.delete_collection(self.collection_name)
+                    self._collection = self._client.create_collection(
+                        name=self.collection_name,
+                        metadata=metadata,
+                    )
+
+    # ─────────────────────────────────────────────
+    # VectorStore Protocol Implementation
+    # ─────────────────────────────────────────────
+
+    def add_documents(self, docs: list[Document], namespace: str) -> None:
+        """Add documents to a Chroma collection (namespace)."""
+        if not docs:
+            return
+
+        target_coll_name = self._make_collection_name(namespace)
+        if target_coll_name != self.collection_name:
+            coll = self._client.get_or_create_collection(
+                name=target_coll_name,
                 metadata={
-                    "company":   self.company_name,
+                    "company": namespace,
                     "embedding": self.embedder.provider,
-                    "dims":      str(self.embedder.dimensions),
-                    "hnsw:space": "cosine",   # cosine similarity metric
+                    "dims": str(self.embedder.dimensions),
+                    "hnsw:space": "cosine",
+                    "hnsw:M": self.hnsw_m,
+                    "hnsw:construction_ef": self.hnsw_construction_ef,
+                    "hnsw:search_ef": self.hnsw_search_ef,
                 },
             )
+        else:
+            coll = self._collection
 
-            # Check if existing collection dimension matches current embedder
-            if self._collection.count() > 0:
-                sample = self._collection.get(include=["embeddings"], limit=1)
-                if sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
-                    existing_dim = len(sample["embeddings"][0])
-                    if existing_dim != self.embedder.dimensions:
-                        print(f"    [CHROMA] Dimension mismatch: collection has {existing_dim}d, "
-                              f"current embedder has {self.embedder.dimensions}d ({self.embedder.provider}). Recreating collection...")
-                        self._client.delete_collection(self.collection_name)
-                        self._collection = self._client.create_collection(
-                            name=self.collection_name,
-                            metadata={
-                                "company":   self.company_name,
-                                "embedding": self.embedder.provider,
-                                "dims":      str(self.embedder.dimensions),
-                                "hnsw:space": "cosine",
-                            },
-                        )
+        # Separate docs needing embeddings
+        texts_to_embed = [d.text for d in docs if d.embedding is None]
+        new_vecs = self.embedder.embed(texts_to_embed) if texts_to_embed else []
+        vec_iter = iter(new_vecs)
 
-            print(f"    [CHROMA] Collection '{self.collection_name}' ready "
-                  f"({self._collection.count()} existing vectors)")
-        except ImportError:
-            print("    [CHROMA] ChromaDB not installed. Run: pip install chromadb")
-            raise
+        ids: list[str] = []
+        documents: list[str] = []
+        metadatas: list[dict[str, Any]] = []
+        embeddings: list[list[float]] = []
 
-    # ─────────────────────────────────────────────
-    # Upsert
-    # ─────────────────────────────────────────────
+        for d in docs:
+            ids.append(d.id or f"{target_coll_name}_{uuid.uuid4().hex[:12]}")
+            documents.append(d.text)
+            # Flatten metadata for Chroma compatibility
+            flat_meta: dict[str, Any] = {}
+            for k, v in d.metadata.items():
+                if isinstance(v, (str, int, float, bool)):
+                    flat_meta[k] = v
+                elif isinstance(v, list):
+                    flat_meta[k] = ", ".join(str(item) for item in v)
+                else:
+                    flat_meta[k] = str(v)
+            metadatas.append(flat_meta)
 
-    def upsert_chunks(self, chunks: list[dict], show_progress: bool = True) -> int:
-        """
-        Embed and store a list of chunk dicts into ChromaDB.
+            emb = d.embedding if d.embedding is not None else next(vec_iter)
+            embeddings.append(emb)
 
-        Args:
-            chunks:        List of chunk dicts from the chunking module.
-            show_progress: Print progress bar to terminal.
-
-        Returns:
-            Number of chunks stored.
-        """
-        if not chunks:
-            return 0
-
-        # Filter chunks with text
-        valid = [c for c in chunks if c.get("text", "").strip()]
-        if not valid:
-            return 0
-
-        print(f"\n    [CHROMA] Embedding {len(valid)} chunks via {self.embedder.provider}…")
-
-        texts = [c["text"] for c in valid]
-        vectors = self.embedder.embed(texts)
-
-        if not vectors:
-            print("    [CHROMA] Embedding failed — no vectors produced.")
-            return 0
-
-        # Build IDs and metadata for ChromaDB
-        ids       = []
-        metadatas = []
-        documents = []
-
-        for chunk, vector in zip(valid, vectors):
-            # Unique ID = collection + chunk hash
-            uid = f"{self.collection_name}_{uuid.uuid4().hex[:12]}"
-            ids.append(uid)
-            documents.append(chunk["text"])
-
-            # ChromaDB metadata must be flat (str / int / float / bool only)
-            meta = {
-                "company":      str(chunk.get("company", self.company_name)),
-                "source":       str(chunk.get("source", "")),
-                "title":        str(chunk.get("title", ""))[:200],
-                "url":          str(chunk.get("url", ""))[:500],
-                "page_number":  int(chunk.get("page_number", 0)),
-                "chunk_index":  int(chunk.get("chunk_index", 0)),
-                "total_chunks": int(chunk.get("total_chunks", 1)),
-                "strategy":     str(chunk.get("strategy", "")),
-                "token_count":  int(chunk.get("token_count", 0)),
-                "word_count":   int(chunk.get("word_count", len(chunk["text"].split()))),
-                "topics":       ", ".join(chunk.get("topics", [])) if isinstance(chunk.get("topics"), list) else str(chunk.get("topics", "")),
-                "processed_at": str(chunk.get("processed_at", "")),
-                "section_title": str(chunk.get("section_title", "")),
-            }
-            metadatas.append(meta)
-
-        # Upsert in batches of 100 (ChromaDB limit)
+        # Batch upsert in groups of 100
         batch_size = 100
-        stored = 0
         for i in range(0, len(ids), batch_size):
-            batch_ids   = ids[i: i + batch_size]
-            batch_docs  = documents[i: i + batch_size]
-            batch_meta  = metadatas[i: i + batch_size]
-            batch_vecs  = vectors[i: i + batch_size]
-
-            self._collection.upsert(
-                ids        = batch_ids,
-                documents  = batch_docs,
-                metadatas  = batch_meta,
-                embeddings = batch_vecs,
+            coll.upsert(
+                ids=ids[i : i + batch_size],
+                documents=documents[i : i + batch_size],
+                metadatas=metadatas[i : i + batch_size],
+                embeddings=embeddings[i : i + batch_size],
             )
-            stored += len(batch_ids)
-
-            if show_progress:
-                pct = int(stored / len(ids) * 100)
-                bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
-                print(f"\r        [{bar}] {pct}% ({stored}/{len(ids)})", end="", flush=True)
-
-        if show_progress:
-            print()  # newline after progress bar
-
-        total_now = self._collection.count()
-        print(f"    [CHROMA] ✓ Stored {stored} chunks | Collection total: {total_now}")
-        return stored
-
-    # ─────────────────────────────────────────────
-    # Query / Semantic Search
-    # ─────────────────────────────────────────────
 
     def query(
         self,
-        query_text: str,
-        top_k:      int = CHROMA_TOP_K,
-        filter_meta: Optional[dict] = None,
-    ) -> list[dict]:
-        """
-        Semantic search: find the top_k most relevant chunks.
-
-        Args:
-            query_text:  Natural language query string.
-            top_k:       Number of results to return.
-            filter_meta: Optional ChromaDB metadata filter dict.
-                         e.g. {"source": "local_pdf"} or {"page_number": 3}
-
-        Returns:
-            List of result dicts, each containing:
-              text, score, source, title, url, page_number, chunk_index, topics
-        """
-        if not query_text.strip():
+        text: str,
+        top_k: int = 5,
+        filters: dict[str, Any] | None = None,
+        namespace: str | None = None,
+    ) -> list[Document]:
+        """Query ChromaDB by semantic text similarity."""
+        if not text.strip():
             return []
 
-        query_vec = self.embedder.embed_one(query_text)
+        coll = self._collection
+        if namespace:
+            target_name = self._make_collection_name(namespace)
+            if target_name != self.collection_name:
+                coll = self._client.get_or_create_collection(target_name)
+
+        if coll.count() == 0:
+            return []
+
+        query_vec = self.embedder.embed_one(text)
         if not query_vec:
             return []
 
-        kwargs = dict(
-            query_embeddings=[query_vec],
-            n_results=min(top_k, max(self._collection.count(), 1)),
-            include=["documents", "metadatas", "distances"],
-        )
-        if filter_meta:
-            kwargs["where"] = filter_meta
+        kwargs: dict[str, Any] = {
+            "query_embeddings": [query_vec],
+            "n_results": min(top_k, max(coll.count(), 1)),
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if filters:
+            kwargs["where"] = filters
 
-        results = self._collection.query(**kwargs)
-
-        output = []
-        if not results or not results.get("ids"):
+        results = coll.query(**kwargs)
+        output: list[Document] = []
+        if not results or not results.get("ids") or not results["ids"][0]:
             return output
 
-        for doc, meta, dist in zip(
+        for doc_id, doc_text, meta, dist in zip(
+            results["ids"][0],
             results["documents"][0],
             results["metadatas"][0],
             results["distances"][0],
         ):
             # ChromaDB cosine distance: 0 = identical, 2 = opposite
-            # Convert to similarity score 0-100
             similarity = round((1 - dist / 2) * 100, 1)
-            output.append({
-                "text":        doc,
-                "score":       similarity,
-                "source":      meta.get("source", ""),
-                "title":       meta.get("title", ""),
-                "url":         meta.get("url", ""),
-                "page_number": meta.get("page_number", 0),
-                "chunk_index": meta.get("chunk_index", 0),
-                "strategy":    meta.get("strategy", ""),
-                "topics":      meta.get("topics", ""),
-            })
+            meta_copy = dict(meta)
+            meta_copy["score"] = similarity
+            output.append(
+                Document(
+                    id=doc_id,
+                    text=doc_text,
+                    metadata=meta_copy,
+                    score=similarity,
+                )
+            )
 
-        return sorted(output, key=lambda x: x["score"], reverse=True)
+        return sorted(output, key=lambda d: d.score or 0.0, reverse=True)
+
+    def delete(self, namespace: str, ids: list[str] | None = None) -> None:
+        """Delete specific document IDs or entire collection."""
+        target_name = self._make_collection_name(namespace)
+        try:
+            if ids:
+                coll = self._client.get_collection(target_name)
+                coll.delete(ids=ids)
+            else:
+                self._client.delete_collection(target_name)
+                if target_name == self.collection_name:
+                    self._init_chroma()
+        except Exception as e:
+            print(f"    [CHROMA] Delete warning: {e}")
 
     # ─────────────────────────────────────────────
-    # Utility
+    # Legacy helper methods for backwards compatibility
     # ─────────────────────────────────────────────
+
+    def upsert_chunks(self, chunks: list[dict], show_progress: bool = True) -> int:
+        """Legacy helper for existing pipeline code."""
+        if not chunks:
+            return 0
+        valid = [c for c in chunks if c.get("text", "").strip()]
+        if not valid:
+            return 0
+
+        docs = []
+        for i, c in enumerate(valid):
+            doc_id = f"{self.collection_name}_{uuid.uuid4().hex[:12]}"
+            meta = {
+                "company": str(c.get("company", self.company_name)),
+                "source": str(c.get("source", "")),
+                "title": str(c.get("title", ""))[:200],
+                "url": str(c.get("url", ""))[:500],
+                "page_number": int(c.get("page_number", 0)),
+                "chunk_index": int(c.get("chunk_index", i)),
+                "strategy": str(c.get("strategy", "")),
+                "token_count": int(c.get("token_count", 0)),
+                "topics": str(c.get("topics", "")),
+                "source_date": str(c.get("source_date", "")),
+                "ingested_at": str(c.get("ingested_at", "")),
+            }
+            docs.append(Document(id=doc_id, text=c["text"], metadata=meta))
+
+        self.add_documents(docs, namespace=self.company_name)
+        count = len(docs)
+        print(f"    [CHROMA] ✓ Stored {count} chunks | Collection total: {self._collection.count()}")
+        return count
 
     def info(self) -> dict:
-        """Return collection statistics."""
-        count = self._collection.count()
+        """Return collection stats."""
+        count = self._collection.count() if self._collection else 0
         return {
-            "collection":  self.collection_name,
-            "company":     self.company_name,
+            "collection": self.collection_name,
+            "company": self.company_name,
             "total_vectors": count,
-            "embedder":    self.embedder.provider,
-            "dimensions":  self.embedder.dimensions,
-            "storage_path": CHROMA_DIR,
+            "embedder": self.embedder.provider,
+            "dimensions": self.embedder.dimensions,
+            "storage_path": settings.CHROMA_DIR,
+            "hnsw_m": self.hnsw_m,
+            "hnsw_construction_ef": self.hnsw_construction_ef,
+            "hnsw_search_ef": self.hnsw_search_ef,
         }
 
-    def delete_collection(self):
-        """Permanently delete this company's collection from ChromaDB."""
-        self._client.delete_collection(self.collection_name)
-        print(f"    [CHROMA] Collection '{self.collection_name}' deleted.")
+    def delete_collection(self) -> None:
+        """Permanently delete collection."""
+        self.delete(self.company_name)
 
-    def reset_collection(self):
-        """Delete and recreate an empty collection (clears all data)."""
-        self.delete_collection()
+    def reset_collection(self) -> None:
+        """Reset collection to empty."""
+        self.delete(self.company_name)
         self._init_chroma()
 
     @staticmethod
     def list_all_collections() -> list[str]:
-        """List all company collections stored in ChromaDB."""
+        """List all collections."""
         try:
-            import chromadb
-            client = chromadb.PersistentClient(path=CHROMA_DIR)
-            cols = client.list_collections()
-            return [c.name for c in cols]
+            client = chromadb.PersistentClient(path=settings.CHROMA_DIR)
+            return [c.name for c in client.list_collections()]
         except Exception:
             return []
+
+
+# Alias VectorStore to ChromaVectorStore for backwards compatibility
+VectorStore = ChromaVectorStore

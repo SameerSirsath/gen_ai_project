@@ -1,5 +1,8 @@
 # 🚀 AI-Powered Sales Outreach: Complete Technical Documentation & Project Guide
 
+> **Default**: ChromaDB (local) + Gemini/ONNX, fully free tier.  
+> **Optional**: Pinecone + Groq via config flags for cloud/production.
+
 **Academic Year:** 2025–2026  
 **Institution:** MIT Academy of Engineering (Autonomous Institute Affiliated to Savitribai Phule Pune University)  
 **Project Guide:** Prof. Anita Shingade  
@@ -7,6 +10,17 @@
 - Sameer Sahebrao Sirsath (PRN: 202401110023)  
 - Rameshwar Laxman Sanap (PRN: 202401110021)  
 - Vineet Manohar Kaldate (PRN: 202401110074)  
+
+---
+
+## ⚖️ Stack Alignment: Claimed vs. Implemented Architecture
+
+| Architecture Tier | Claimed Specification (Presentation / Slides) | Implemented Reality (Codebase) | How to Switch |
+| :--- | :--- | :--- | :--- |
+| **Vector Database** | Pinecone Cloud Vector DB (Serverless) | ChromaDB (local disk HNSW) + Pinecone v3+ Client Adapter | `VECTOR_BACKEND=chroma` (default) or `pinecone` |
+| **LLM Inference** | Groq Cloud LLaMA 3.1 70B Versatile | Google Gemini 1.5 Flash / OpenAI / Groq LLaMA 3.1 / Local ONNX | `LLM_BACKEND=gemini` (default), `groq`, `openai`, `onnx` |
+| **Embedding Model**| 3072-dimension Dense Vector Embeddings | Gemini (3072d) / OpenAI (1536d) / Chroma ONNX MiniLM (384d) | `EMBEDDING_BACKEND=gemini` (default), `openai`, `local` |
+| **Agentic Framework**| LangChain Multi-Agent Orchestration | Native Protocol-driven Structured Schema Agents | Direct Pydantic models with validation gates |
 
 ---
 
