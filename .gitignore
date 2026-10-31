@@ -1,0 +1,30 @@
+# Git ignore rules for AI Sales Intelligence Pipeline
+
+# ── Secret credentials ──────────────────────────────────────────
+.env
+
+# ── Pipeline outputs ────────────────────────────────────────────
+output/
+chroma_db/
+
+# ── Python cache ────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── OS files ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor ──────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
