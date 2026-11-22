@@ -64,27 +64,48 @@ def _save_dispatched_email(prospect_name: str, writer_output: WriterOutput, eval
         print(f"[Orchestrator] Warning: could not save dispatch record: {e}")
 
 
-def run_agent_pipeline(prospect_name: str, context: str) -> dict:
+def run_agent_pipeline(
+    prospect_name: str,
+    context: str,
+    company_context: Optional[str] = None
+) -> dict:
     """
     Runs the multi-agent sales outreach pipeline:
     1. Researcher Agent -> extracts signals (pain points, news)
-    2. Writer Agent     -> drafts concise 3-sentence cold email
+    2. Writer Agent     -> drafts concise 3-sentence cold email pitching our solution
     3. Evaluator Agent  -> strict hallucination gate check
     """
     try:
         # Step 1: Initialize Local LLM Client
         llm = OllamaClient()
 
+        # Step 1b: Fetch our company profile context if not explicitly provided
+        if not company_context:
+            try:
+                from app.services.vector_service import search_company_profile
+                company_context = search_company_profile(f"{prospect_name} sales outreach solutions")
+            except Exception:
+                company_context = ""
+
         # Step 2: Researcher Agent
         signals: ResearchSignals = extract_signals(prospect_name, context, llm_client=llm)
         print(f"[Researcher] Found signals: {signals.model_dump_json()}")
 
-        # Step 3: Writer Agent
-        draft: WriterOutput = draft_email(signals, context, llm_client=llm)
+        # Step 3: Writer Agent (pitches our services to their pain point)
+        draft: WriterOutput = draft_email(
+            signals,
+            context,
+            llm_client=llm,
+            company_context=company_context
+        )
         print(f"[Writer] Drafted email: {draft.model_dump_json()}")
 
         # Step 4: Evaluator Agent
-        eval_result: EvaluationResult = evaluate_email(draft, context, llm_client=llm)
+        combined_verification_context = (
+            f"Prospect Context:\n{context}\n\n"
+            f"Our Company Profile & Value Proposition:\n{company_context or 'Enterprise B2B Automation Solutions'}"
+        )
+        eval_result: EvaluationResult = evaluate_email(draft, combined_verification_context, llm_client=llm)
         print(f"[Evaluator] Fact-check status: is_grounded={eval_result.is_grounded}")
 
         # Step 5: Hallucination Gate Decision

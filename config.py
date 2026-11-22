@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # ═══════════════════════════════════════════════════════════════
     # 2. VECTOR STORE CONFIGURATION (Pinecone & Chroma HNSW)
     # ═══════════════════════════════════════════════════════════════
+    DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite:///{_PROJECT_ROOT / 'ai_sdr.db'}")
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
     PINECONE_API_KEY: Optional[str] = None
     PINECONE_INDEX_NAME: str = "ai-sales"
     PINECONE_ENV: Optional[str] = None

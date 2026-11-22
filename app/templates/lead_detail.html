@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block title %}{{ lead.company_name }} — Agent Workspace{% endblock %}
+{% block page_title %}{{ lead.company_name }} — Agent Workspace{% endblock %}
+{% block page_subtitle %}Review ingested intelligence, generate verified emails via multi-agent RAG, and dispatch via SMTP{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Left Column: Prospect Intel & Ingested Context -->
+  <div class="col-lg-5">
+    <!-- Prospect Profile Card -->
+    <div class="card p-4 border-0 mb-4 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0">Prospect Profile</h5>
+        <span class="badge {% if lead.status == 'Sent' %}bg-success{% elif lead.status == 'Drafted' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+          {{ lead.status }}
+        </span>
+      </div>
+
+      <div class="mb-2">
+        <span class="text-secondary small text-uppercase">Contact:</span>
+        <div class="fw-semibold text-light">{{ lead.contact_name or 'Not specified' }}</div>
+      </div>
+      <div class="mb-2">
+        <span class="text-secondary small text-uppercase">Email:</span>
+        <div>
+          <input type="email" id="lead-recipient-email" class="form-control form-control-sm mt-1" value="{{ lead.email }}" placeholder="Enter recipient email">
+        </div>
+      </div>
+      <div class="mb-2">
+        <span class="text-secondary small text-uppercase">Website:</span>
+        <div>
+          {% if lead.website_url %}
+            <a href="{{ lead.website_url }}" target="_blank" class="text-info text-decoration-none small">
+              {{ lead.website_url }} <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          {% else %}
+            <span class="text-secondary small">None listed</span>
+          {% endif %}
+        </div>
+      </div>
+      <div>
+        <span class="text-secondary small text-uppercase">Ingestion Mode:</span>
+        <span class="badge bg-secondary bg-opacity-25 text-secondary ms-1">{{ lead.mode }}</span>
+      </div>
+    </div>
+
+    <!-- Ingested Context & NLP Extractions Card -->
+    <div class="card p-4 border-0 shadow-sm mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="fw-bold mb-0"><i class="bi bi-file-text-fill text-primary me-2"></i>Ingested RAG Context</h6>
+        <span class="badge bg-dark border border-secondary text-secondary">{{ contexts|length }} Chunks Ingested</span>
+      </div>
+
+      <!-- Add New Context Section -->
+      <form id="add-context-form" class="mb-3">
+        <label class="form-label text-secondary small">Add / Append Company Intel</label>
+        <textarea id="additional-context" class="form-control form-control-sm mb-2" rows="3" placeholder="Paste latest news, product release, or LinkedIn commentary..." required></textarea>
+        <div class="text-end">
+          <button type="submit" id="save-context-btn" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i> Process via NLP & Vector Store
+          </button>
+        </div>
+      </form>
+
+      <hr class="border-secondary my-3">
+
+      <!-- Context Items List -->
+      <div class="context-scroll-list" style="max-height: 400px; overflow-y: auto;">
+        {% if contexts %}
+          {% for ctx in contexts %}
+          <div class="p-3 rounded bg-dark border border-secondary mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="badge bg-secondary bg-opacity-25 text-secondary small">{{ ctx.source_type }}</span>
+              <small class="text-secondary" style="font-size: 0.75rem;">{{ ctx.created_at.strftime('%Y-%m-%d %H:%M') if ctx.created_at else '' }}</small>
+            </div>
+            
+            <p class="small text-light mb-2" style="white-space: pre-wrap; font-size: 0.85rem;">{{ ctx.raw_text|truncate(280) }}</p>
+
+            <!-- NLP Keywords -->
+            {% if ctx.keywords and ctx.keywords != '[]' %}
+              <div class="mt-2">
+                <small class="text-secondary d-block mb-1" style="font-size: 0.7rem; font-weight: 600;">KEYBERT KEYWORDS:</small>
+                <div class="d-flex flex-wrap gap-1">
+                  {% for kw in ctx.to_dict().keywords %}
+                    <span class="badge bg-primary bg-opacity-15 text-primary border border-primary border-opacity-25" style="font-size: 0.7rem;">{{ kw }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="mt-2 d-flex align-items-center gap-2">
+              {% if ctx.vector_synced %}
+                <span class="badge bg-success bg-opacity-25 text-success small" style="font-size: 0.65rem;"><i class="bi bi-check2-circle"></i> ChromaDB Synced</span>
+              {% else %}
+                <span class="badge bg-warning bg-opacity-25 text-warning small" style="font-size: 0.65rem;"><i class="bi bi-hourglass-split"></i> Indexing...</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="text-secondary text-center py-3 small">No context text ingested yet for this lead.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Agent Generation & Dispatch -->
+  <div class="col-lg-7">
+    <!-- Generation Control Card -->
+    <div class="card p-4 border-0 mb-4 shadow-sm">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+          <h5 class="fw-bold mb-0">Multi-Agent Outreach Generation</h5>
+          <small class="text-secondary">Researcher → Writer → Evaluator Quality Gate</small>
+        </div>
+        <div id="evaluator-badge" class="badge badge-pending px-3 py-2 text-uppercase">
+          Awaiting Generation
+        </div>
+      </div>
+
+      <div class="d-grid mb-4">
+        <button id="generate-email-btn" class="btn btn-primary py-2 fw-semibold">
+          <span id="gen-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
+          <i class="bi bi-lightning-charge-fill me-1" id="gen-icon"></i>
+          <span id="gen-text">Generate Cold Outreach Email</span>
+        </button>
+      </div>
+
+      <!-- Agent Status Progress Bar (Hidden by default) -->
+      <div id="agent-progress-box" class="p-3 rounded bg-dark border border-secondary mb-4 d-none">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <span class="small fw-semibold text-light" id="agent-step-text">1. Researcher querying ChromaDB...</span>
+          <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+        </div>
+        <div class="progress" style="height: 6px;">
+          <div id="agent-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 35%;"></div>
+        </div>
+      </div>
+
+      <!-- Hallucination Alert Box -->
+      <div id="hallucination-alert" class="alert alert-danger d-none" role="alert">
+        <h6 class="alert-heading fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Hallucination Blocked by Evaluator Gate</h6>
+        <p id="hallucination-reason" class="mb-2 small"></p>
+        <div id="flagged-claims-box" class="d-none small">
+          <strong>Flagged Claims:</strong>
+          <ul id="flagged-claims-list" class="mb-0 ps-3"></ul>
+        </div>
+      </div>
+
+      <!-- Editable Email Draft Form -->
+      <div id="email-draft-container">
+        <div class="mb-3">
+          <label class="form-label text-secondary small fw-semibold">EMAIL SUBJECT</label>
+          <input type="text" id="draft-subject" class="form-control" placeholder="Generated subject line will appear here..." value="">
+        </div>
+
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label text-secondary small fw-semibold mb-0">EMAIL BODY (EDITABLE)</label>
+            <span id="draft-word-count" class="text-secondary small">0 words</span>
+          </div>
+          <textarea id="draft-body" class="form-control" rows="6" placeholder="Generated 3-sentence grounded email draft will appear here..."></textarea>
+          <div class="form-text text-secondary">
+            Structured slot filling: Sentence 1 anchors on recent news, Sentence 2 pitches our solution to their pain point, Sentence 3 is a soft CTA.
+          </div>
+        </div>
+
+        <!-- Evaluator Audit Insights -->
+        <div id="evaluator-audit-box" class="p-3 rounded bg-dark border border-secondary mb-4 d-none">
+          <span class="text-secondary small fw-bold text-uppercase d-block mb-1">Evaluator Reasoning:</span>
+          <p id="evaluator-reasoning-text" class="small text-light mb-2"></p>
+          <span class="text-secondary small fw-bold text-uppercase d-block mb-1">Verified Factual Claims Used:</span>
+          <div id="verified-claims-tags" class="d-flex flex-wrap gap-1"></div>
+        </div>
+
+        <!-- Dispatch Button -->
+        <div class="d-flex justify-content-end gap-2">
+          <button id="send-smtp-btn" class="btn btn-success px-4 py-2 fw-semibold" disabled>
+            <span id="send-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
+            <i class="bi bi-send-fill me-1" id="send-icon"></i>
+            <span id="send-text">Send Email via SMTP</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dispatch History Card -->
+    <div class="card p-4 border-0 shadow-sm">
+      <h6 class="fw-bold mb-3"><i class="bi bi-clock-history text-secondary me-2"></i>Email Dispatch Log</h6>
+      {% if emails %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr class="text-secondary small">
+                <th>Sent At</th>
+                <th>Subject</th>
+                <th>Evaluator Score</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for em in emails %}
+              <tr>
+                <td class="small">{{ em.sent_at.strftime('%Y-%m-%d %H:%M') if em.sent_at else '' }}</td>
+                <td class="small fw-semibold">{{ em.subject|truncate(40) }}</td>
+                <td><span class="badge bg-success bg-opacity-25 text-success">{{ (em.evaluator_score * 100)|int }}% Grounded</span></td>
+                <td><span class="badge bg-success">Dispatched</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-secondary small mb-0">No emails have been dispatched yet for this account.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const LEAD_ID = {{ lead.id }};
+
+  // Add Additional Context Submission
+  document.getElementById("add-context-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById("save-context-btn");
+    const rawText = document.getElementById("additional-context").value.trim();
+    if (!rawText) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+
+    try {
+      const resp = await fetch(`/api/leads/${LEAD_ID}/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_text: rawText, source_type: "Manual" })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        showToast("Context added! NLP extraction and ChromaDB sync running in background.");
+        setTimeout(() => location.reload(), 1200);
+      } else {
+        showToast(data.error || "Failed to process context", true);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i> Process via NLP & Vector Store';
+      }
+    } catch (err) {
+      showToast("Network error: " + err.message, true);
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i> Process via NLP & Vector Store';
+    }
+  });
+
+  // Multi-Agent Generation Trigger
+  document.getElementById("generate-email-btn").addEventListener("click", async function() {
+    const genBtn = document.getElementById("generate-email-btn");
+    const spinner = document.getElementById("gen-spinner");
+    const genIcon = document.getElementById("gen-icon");
+    const genText = document.getElementById("gen-text");
+
+    const progressBox = document.getElementById("agent-progress-box");
+    const progressBar = document.getElementById("agent-progress-bar");
+    const progressText = document.getElementById("agent-step-text");
+
+    const badge = document.getElementById("evaluator-badge");
+    const alertBox = document.getElementById("hallucination-alert");
+    const sendBtn = document.getElementById("send-smtp-btn");
+
+    genBtn.disabled = true;
+    spinner.classList.remove("d-none");
+    genIcon.classList.add("d-none");
+    genText.textContent = "Agents Collaborating...";
+
+    progressBox.classList.remove("d-none");
+    progressBar.style.width = "25%";
+    progressText.textContent = "1. Researcher Agent: Extracting pain points & news from ChromaDB...";
+
+    badge.className = "badge bg-info text-dark px-3 py-2 text-uppercase";
+    badge.textContent = "Processing...";
+    alertBox.classList.add("d-none");
+    sendBtn.disabled = true;
+
+    // Simulate agent steps in progress bar
+    setTimeout(() => {
+      progressBar.style.width = "60%";
+      progressText.textContent = "2. Writer Agent: Drafting 3-sentence grounded email...";
+    }, 2000);
+
+    setTimeout(() => {
+      progressBar.style.width = "85%";
+      progressText.textContent = "3. Evaluator Agent: Fact-checking claims against verified context...";
+    }, 4500);
+
+    try {
+      const resp = await fetch(`/api/leads/${LEAD_ID}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const data = await resp.json();
+
+      progressBox.classList.add("d-none");
+
+      if (resp.ok && data.success) {
+        // Populate inputs
+        document.getElementById("draft-subject").value = data.subject || "";
+        document.getElementById("draft-body").value = data.body || "";
+
+        // Word count
+        const words = (data.body || "").trim().split(/\s+/).filter(Boolean).length;
+        document.getElementById("draft-word-count").textContent = `${words} words`;
+
+        // Evaluator Audit Box
+        const auditBox = document.getElementById("evaluator-audit-box");
+        auditBox.classList.remove("d-none");
+        document.getElementById("evaluator-reasoning-text").textContent = data.reasoning || "All claims verified against context.";
+
+        const tagsContainer = document.getElementById("verified-claims-tags");
+        tagsContainer.innerHTML = "";
+        if (Array.isArray(data.claims_used) && data.claims_used.length > 0) {
+          data.claims_used.forEach(claim => {
+            const tag = document.createElement("span");
+            tag.className = "badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25";
+            tag.textContent = claim;
+            tagsContainer.appendChild(tag);
+          });
+        }
+
+        // Status badge & grounding decision
+        if (data.is_grounded && data.status === "PASSED") {
+          badge.className = "badge badge-passed px-3 py-2 text-uppercase";
+          badge.innerHTML = '<i class="bi bi-shield-check me-1"></i> PASSED FACT-CHECK';
+          sendBtn.disabled = false;
+          showToast("Email generated and verified by Evaluator Agent!");
+        } else {
+          badge.className = "badge badge-blocked px-3 py-2 text-uppercase";
+          badge.innerHTML = '<i class="bi bi-shield-x me-1"></i> BLOCKED (HALLUCINATION)';
+          sendBtn.disabled = true;
+
+          // Show alert
+          alertBox.classList.remove("d-none");
+          document.getElementById("hallucination-reason").textContent = data.reasoning || "Ungrounded claims detected.";
+
+          const flaggedBox = document.getElementById("flagged-claims-box");
+          const flaggedList = document.getElementById("flagged-claims-list");
+          flaggedList.innerHTML = "";
+          if (Array.isArray(data.flagged_claims) && data.flagged_claims.length > 0) {
+            flaggedBox.classList.remove("d-none");
+            data.flagged_claims.forEach(c => {
+              const li = document.createElement("li");
+              li.textContent = c;
+              flaggedList.appendChild(li);
+            });
+          }
+        }
+      } else {
+        showToast(data.error || "Generation failed.", true);
+        badge.className = "badge bg-danger px-3 py-2 text-uppercase";
+        badge.textContent = "FAILED";
+      }
+    } catch (err) {
+      progressBox.classList.add("d-none");
+      showToast("Network or generation error: " + err.message, true);
+      badge.className = "badge bg-danger px-3 py-2 text-uppercase";
+      badge.textContent = "ERROR";
+    } finally {
+      genBtn.disabled = false;
+      spinner.classList.add("d-none");
+      genIcon.classList.remove("d-none");
+      genText.textContent = "Generate Cold Outreach Email";
+    }
+  });
+
+  // SMTP Email Send Trigger
+  document.getElementById("send-smtp-btn").addEventListener("click", async function() {
+    const sendBtn = document.getElementById("send-smtp-btn");
+    const spinner = document.getElementById("send-spinner");
+    const sendIcon = document.getElementById("send-icon");
+    const sendText = document.getElementById("send-text");
+
+    const subject = document.getElementById("draft-subject").value.trim();
+    const body = document.getElementById("draft-body").value.trim();
+    const recipientEmail = document.getElementById("lead-recipient-email").value.trim();
+
+    if (!subject || !body) {
+      alert("Subject and Body are required before sending.");
+      return;
+    }
+
+    if (!recipientEmail) {
+      alert("Please provide a valid recipient email address.");
+      return;
+    }
+
+    sendBtn.disabled = true;
+    spinner.classList.remove("d-none");
+    sendIcon.classList.add("d-none");
+    sendText.textContent = "Dispatching via SMTP...";
+
+    try {
+      const resp = await fetch(`/api/leads/${LEAD_ID}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: subject,
+          body: body,
+          email: recipientEmail,
+        })
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        showToast(data.message || "Email dispatched via SMTP!");
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        showToast(data.error || "SMTP dispatch failed.", true);
+        sendBtn.disabled = false;
+        spinner.classList.add("d-none");
+        sendIcon.classList.remove("d-none");
+        sendText.textContent = "Send Email via SMTP";
+      }
+    } catch (err) {
+      showToast("Network error: " + err.message, true);
+      sendBtn.disabled = false;
+      spinner.classList.add("d-none");
+      sendIcon.classList.remove("d-none");
+      sendText.textContent = "Send Email via SMTP";
+    }
+  });
+
+  // Auto-trigger generate if query param is set
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("action") === "generate") {
+    document.getElementById("generate-email-btn").click();
+  }
+</script>
+{% endblock %}

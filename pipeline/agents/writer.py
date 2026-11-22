@@ -42,14 +42,16 @@ def draft_email(
     research: ResearchSignals,
     context: str,
     llm_client: Optional[Any] = None,
+    company_context: Optional[str] = None,
 ) -> WriterOutput:
     """
     Drafts a personalized cold email grounded in research signals and context.
 
     Args:
         research: ResearchSignals extracted by the Researcher Agent.
-        context: Raw RAG context text.
+        context: Raw RAG context text about prospect.
         llm_client: Client instance with a generate() method. Defaults to OllamaClient.
+        company_context: Optional context regarding our own company value prop/services.
 
     Returns:
         Parsed WriterOutput object.
@@ -63,10 +65,18 @@ def draft_email(
     schema_dict = WriterOutput.model_json_schema()
     schema_str = json.dumps(schema_dict, indent=2)
 
+    company_instruction = ""
+    if company_context and company_context.strip():
+        company_instruction = (
+            f"\nOur Company Value Proposition & Services:\n{company_context.strip()}\n"
+            f"- In Sentence 2, connect our capability directly to solving their pain point ({primary_pain_point}).\n"
+        )
+
     prompt = (
         f"You are a top-performing SDR. Write a cold email.\n"
         f"- Sentence 1 MUST reference this recent news: {research.recent_news}.\n"
         f"- Sentence 2 MUST address this pain point: {primary_pain_point}.\n"
+        f"{company_instruction}"
         f"- Sentence 3 must be a soft call-to-action.\n"
         f"Do not use generic corporate jargon. Keep it under 75 words. "
         f"Extract the factual claims you used. Return ONLY JSON matching the WriterOutput schema.\n\n"

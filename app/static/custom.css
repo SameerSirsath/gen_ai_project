@@ -1,0 +1,27 @@
+/* app/static/custom.css — Custom CSS enhancements for Bootstrap 5 Dashboard */
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Transitions */
+.btn, .nav-link, .card {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Card hover effects */
+.card:hover {
+  border-color: #475569;
+}

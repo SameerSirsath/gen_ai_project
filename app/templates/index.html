@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard Overview — AI SDR{% endblock %}
+{% block page_title %}Executive Pipeline Overview{% endblock %}
+{% block page_subtitle %}Real-time status of prospect intelligence, multi-agent generation, and verified outreach{% endblock %}
+
+{% block content %}
+<!-- Stats Cards Row -->
+<div class="row g-4 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card p-3 shadow-sm border-0">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-secondary small text-uppercase fw-semibold">Total Leads</span>
+          <h2 class="fw-bold my-1">{{ total_leads }}</h2>
+          <span class="badge bg-primary bg-opacity-25 text-primary">In Database</span>
+        </div>
+        <div class="bg-primary bg-opacity-10 text-primary p-3 rounded-circle fs-3">
+          <i class="bi bi-person-lines-fill"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card p-3 shadow-sm border-0">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-secondary small text-uppercase fw-semibold">Emails Sent</span>
+          <h2 class="fw-bold my-1">{{ sent_emails }}</h2>
+          <span class="badge bg-success bg-opacity-25 text-success">SMTP Dispatched</span>
+        </div>
+        <div class="bg-success bg-opacity-10 text-success p-3 rounded-circle fs-3">
+          <i class="bi bi-send-check-fill"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card p-3 shadow-sm border-0">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-secondary small text-uppercase fw-semibold">Cold Reply Rate</span>
+          <h2 class="fw-bold my-1">{{ reply_rate }}</h2>
+          <span class="badge bg-info bg-opacity-25 text-info">+241% vs Generic</span>
+        </div>
+        <div class="bg-info bg-opacity-10 text-info p-3 rounded-circle fs-3">
+          <i class="bi bi-graph-up-arrow"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="card p-3 shadow-sm border-0">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-secondary small text-uppercase fw-semibold">Pending Leads</span>
+          <h2 class="fw-bold my-1">{{ pending_leads }}</h2>
+          <span class="badge bg-warning bg-opacity-25 text-warning">Awaiting Generation</span>
+        </div>
+        <div class="bg-warning bg-opacity-10 text-warning p-3 rounded-circle fs-3">
+          <i class="bi bi-clock-history"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Architecture Pipeline Summary Card -->
+<div class="card mb-4 border-0 p-4">
+  <h5 class="fw-bold mb-3"><i class="bi bi-cpu-fill text-primary me-2"></i>Active Multi-Agent Workflow</h5>
+  <div class="row text-center g-3">
+    <div class="col-md-3">
+      <div class="p-3 rounded bg-dark border border-secondary">
+        <div class="text-primary fs-4 mb-1"><i class="bi bi-search"></i></div>
+        <h6 class="fw-bold mb-1">1. Researcher Agent</h6>
+        <small class="text-secondary">Extracts top 2 pain points & recent news triggers from ChromaDB.</small>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="p-3 rounded bg-dark border border-secondary">
+        <div class="text-info fs-4 mb-1"><i class="bi bi-pen-fill"></i></div>
+        <h6 class="fw-bold mb-1">2. Writer Agent</h6>
+        <small class="text-secondary">Drafts strict 3-sentence email pitching our company solutions.</small>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="p-3 rounded bg-dark border border-secondary">
+        <div class="text-danger fs-4 mb-1"><i class="bi bi-shield-check"></i></div>
+        <h6 class="fw-bold mb-1">3. Evaluator Gate</h6>
+        <small class="text-secondary">Cross-references claims against verified RAG context. Blocks hallucinations.</small>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="p-3 rounded bg-dark border border-secondary">
+        <div class="text-success fs-4 mb-1"><i class="bi bi-envelope-check-fill"></i></div>
+        <h6 class="fw-bold mb-1">4. SMTP Dispatch</h6>
+        <small class="text-secondary">Automated TLS email transmission upon verified human approval.</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Leads Table -->
+<div class="card border-0 p-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0">Recent Prospect Leads</h5>
+    <a href="/leads" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i> Manage All Leads
+    </a>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead>
+        <tr class="text-secondary small text-uppercase">
+          <th>Company</th>
+          <th>Contact Name</th>
+          <th>Email</th>
+          <th>Mode</th>
+          <th>Status</th>
+          <th>Date Added</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if recent_leads %}
+          {% for lead in recent_leads %}
+          <tr>
+            <td class="fw-bold">{{ lead.company_name }}</td>
+            <td>{{ lead.contact_name or '—' }}</td>
+            <td>{{ lead.email or '—' }}</td>
+            <td>
+              <span class="badge bg-secondary bg-opacity-25 text-secondary">{{ lead.mode }}</span>
+            </td>
+            <td>
+              {% if lead.status == 'Sent' %}
+                <span class="badge bg-success">Sent</span>
+              {% elif lead.status == 'Drafted' %}
+                <span class="badge bg-primary">Drafted</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">{{ lead.status }}</span>
+              {% endif %}
+            </td>
+            <td>{{ lead.created_at.strftime('%Y-%m-%d') if lead.created_at else '—' }}</td>
+            <td class="text-end">
+              <a href="/leads/{{ lead.id }}" class="btn btn-sm btn-outline-primary">
+                Open Workspace <i class="bi bi-arrow-right"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7" class="text-center py-4 text-secondary">
+              No leads added yet. Click <a href="/leads" class="text-primary fw-bold">Manage All Leads</a> to add your first prospect.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

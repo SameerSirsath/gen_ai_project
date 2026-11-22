@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Company Profile & Value Proposition — AI SDR{% endblock %}
+{% block page_title %}Our Company Profile & AI Knowledge Base{% endblock %}
+{% block page_subtitle %}Manage your company messaging, services, and value propositions synced into ChromaDB namespace ('our_company'){% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card p-4 border-0 shadow-sm">
+      <form id="company-form">
+        <div class="mb-3">
+          <label class="form-label fw-semibold text-secondary">Company Name</label>
+          <input type="text" id="company-name" class="form-control" value="{{ company.name }}" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold text-secondary">Industry / Sector</label>
+          <input type="text" id="company-industry" class="form-control" value="{{ company.industry }}" required>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold text-secondary">Core Value Proposition</label>
+          <textarea id="company-value-prop" class="form-control" rows="3" required>{{ company.value_proposition }}</textarea>
+          <div class="form-text text-secondary">This defines how our Writer Agent pitches our benefits against prospect pain points.</div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold text-secondary">Services / Solutions Offered</label>
+          <textarea id="company-services" class="form-control" rows="4" required>{{ company.services_offered }}</textarea>
+          <div class="form-text text-secondary">Comma-separated or bullet points of capabilities and offerings.</div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold text-secondary">Relevant Case Studies & Proof Points</label>
+          <textarea id="company-case-studies" class="form-control" rows="4">{{ company.case_studies }}</textarea>
+          <div class="form-text text-secondary">Concrete metrics or testimonials used to ground cold outreach emails.</div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+          <span class="text-secondary small">
+            Last Synced: <span id="last-updated">{{ company.updated_at.strftime('%Y-%m-%d %H:%M:%S') if company.updated_at else 'Never' }}</span>
+          </span>
+          <button type="submit" id="save-sync-btn" class="btn btn-primary px-4 py-2">
+            <span id="btn-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
+            <i class="bi bi-cloud-arrow-up-fill me-1" id="btn-icon"></i>
+            <span id="btn-text">Save & Sync to AI Vector DB</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card p-4 border-0 mb-4">
+      <h6 class="fw-bold mb-3"><i class="bi bi-info-circle-fill text-info me-2"></i>How Multi-Agent RAG Uses This</h6>
+      <p class="small text-secondary mb-2">
+        When an outreach email is drafted for any lead, the Orchestrator simultaneously queries:
+      </p>
+      <ul class="small text-secondary ps-3 mb-3">
+        <li><strong>Lead Context Namespace:</strong> To discover their specific recent trigger and pain point.</li>
+        <li><strong>Our Company Namespace:</strong> To select the exact service and case study that solves that specific pain point.</li>
+      </ul>
+      <p class="small text-secondary mb-0">
+        This produces a tailored pitch rather than generic spam templates.
+      </p>
+    </div>
+
+    <div class="card p-4 border-0">
+      <h6 class="fw-bold mb-2"><i class="bi bi-database-check text-success me-2"></i>Vector Index Status</h6>
+      <p class="small text-secondary mb-3">Namespace: <code>our_company</code></p>
+      <div class="p-3 rounded bg-dark border border-secondary small">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-secondary">Chunking Strategy:</span>
+          <span class="text-light">500 tokens / 50 overlap</span>
+        </div>
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-secondary">Embeddings:</span>
+          <span class="text-light">all-MiniLM / Gemini</span>
+        </div>
+        <div class="d-flex justify-content-between">
+          <span class="text-secondary">HNSW Metric:</span>
+          <span class="text-light">Cosine Similarity</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById("company-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const saveBtn = document.getElementById("save-sync-btn");
+    const spinner = document.getElementById("btn-spinner");
+    const btnIcon = document.getElementById("btn-icon");
+    const btnText = document.getElementById("btn-text");
+
+    saveBtn.disabled = true;
+    spinner.classList.remove("d-none");
+    btnIcon.classList.add("d-none");
+    btnText.textContent = "Syncing with ChromaDB...";
+
+    const payload = {
+      name: document.getElementById("company-name").value.trim(),
+      industry: document.getElementById("company-industry").value.trim(),
+      value_proposition: document.getElementById("company-value-prop").value.trim(),
+      services_offered: document.getElementById("company-services").value.trim(),
+      case_studies: document.getElementById("company-case-studies").value.trim(),
+    };
+
+    try {
+      const resp = await fetch("/api/company", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        showToast("Company profile saved and embedded in ChromaDB ('our_company')!");
+        if (data.company && data.company.updated_at) {
+          document.getElementById("last-updated").textContent = data.company.updated_at;
+        }
+      } else {
+        showToast(data.error || "Failed to update company profile.", true);
+      }
+    } catch (err) {
+      showToast("Network error: " + err.message, true);
+    } finally {
+      saveBtn.disabled = false;
+      spinner.classList.add("d-none");
+      btnIcon.classList.remove("d-none");
+      btnText.textContent = "Save & Sync to AI Vector DB";
+    }
+  });
+</script>
+{% endblock %}
