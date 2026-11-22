@@ -7,6 +7,7 @@ from .gemini_client import GeminiLLMClient, GeminiEmbeddingClient
 from .openai_client import OpenAILLMClient, OpenAIEmbeddingClient
 from .groq_client import GroqLLMClient
 from .onnx_client import ONNXLLMClient, ONNXEmbeddingClient
+from .ollama_client import OllamaClient
 from .factory import get_llm, get_embedder
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "GroqLLMClient",
     "ONNXLLMClient",
     "ONNXEmbeddingClient",
+    "OllamaClient",
     "get_llm",
     "get_embedder",
 ]

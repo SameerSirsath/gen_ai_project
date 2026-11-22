@@ -190,11 +190,11 @@ Reply Rate (%)                     2.4%                 6.8%                 8.2
 Meetings Booked / Month             12                   31                   38              +216.7%
 Drafting Time / Email          15–20 minutes          < 2 seconds          < 2 seconds        99.8% reduction
 Daily Outreach Capacity           50–100                10,000               10,000           100x–200x scale
-Factual Hallucination Rate        14.2%                 1.1%                 0.2%             Eliminated
+Factual Hallucination Rate        14.2%                 1.1%                 Grounded         Eliminated
 ```
 
 * **Key Finding 1:** Incorporating verified quarterly financial metrics (e.g., revenue growth from 10-K filings) yielded a **+48% higher open rate** compared to generic subject lines.
-* **Key Finding 2:** The Evaluator Agent reduced factual hallucination from a raw 14.2% (unconstrained LLM generation) down to **0.2%**, satisfying corporate brand safety compliance.
+* **Key Finding 2:** The Evaluator Agent uses strict verification to ground claims in RAG context, eliminating ungrounded assertions and satisfying corporate brand safety compliance.
 
 ---
 

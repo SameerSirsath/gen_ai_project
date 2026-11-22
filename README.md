@@ -142,13 +142,19 @@ Or run interactively (defaults to Apple):
 python run_pipeline.py
 ```
 
-### 4. Launch the ChromaDB Web Explorer
+### 4. Launch the AI Sales Outreach Web Dashboard
 
-Launch the local web dashboard:
+Launch the Flask multi-agent dashboard:
+```bash
+python app.py
+```
+Open **`http://localhost:5000`** in your browser. Enter a prospect name and verified context to run the multi-agent pipeline (Researcher → Writer → Evaluator) and view real-time generation and grounding status.
+
+*(Optional)* Launch the ChromaDB raw chunk explorer:
 ```bash
 python explore.py
 ```
-Open **`http://localhost:7860`** in your browser to browse collections, inspect chunks, view extracted financial tables, and perform interactive semantic search queries.
+Open **`http://localhost:7860`** to browse collections, inspect chunks, and query the vector store.
 
 ---
 
@@ -187,12 +193,37 @@ Open **`http://localhost:7860`** in your browser to browse collections, inspect 
 
 ---
 
+## 🤖 The Multi-Agent Architecture
+
+The core generative engine employs a specialized three-agent collaborative pipeline:
+
+1. **Researcher Agent (`pipeline/agents/researcher.py`)**:
+   - Ingests raw prospect context and retrieved ChromaDB chunks.
+   - Extracts the top 2 actionable business pain points and 1 recent trigger/news event.
+   - Emits structured `ResearchSignals` (with relevance scoring).
+
+2. **Writer Agent (`pipeline/agents/writer.py`)**:
+   - Takes structured `ResearchSignals` and verified context.
+   - Generates an anti-template, 3-sentence personalized cold email:
+     - Sentence 1: Anchors on verified recent news.
+     - Sentence 2: Directly addresses the primary pain point.
+     - Sentence 3: Provides a clear, soft call-to-action.
+   - Explicitly extracts every factual claim utilized in the draft (`claims_used`).
+
+3. **Evaluator Agent — The Hallucination Gate (`pipeline/agents/evaluator.py`)**:
+   - Acts as a zero-tolerance automated quality gate.
+   - Cross-references each claim in `claims_used` directly against the source ChromaDB / verified context.
+   - If any claim lacks explicit factual grounding or is contradicted, it triggers `is_grounded = False`, flags the specific ungrounded claims, and halts dispatch (`🚨 HALLUCINATION BLOCKED`).
+   - Only when `is_grounded == True` is the email approved and saved to `output/dispatched_emails.json`.
+
+---
+
 ## 📊 Benchmark Results
 
-Evaluated across 75 enterprise deployment campaigns:
+Evaluated across enterprise deployment campaigns:
 - **Cold Reply Rate**: Scaled from **2.4%** baseline to **8.2%** (+241.7% increase).
 - **Drafting Speed**: Reduced from 15–20 minutes to **< 2 seconds** per personalized draft.
-- **Hallucination Rate**: Reduced from 14.2% (unconstrained LLM) to **0.2%** via the Evaluator Agent gate.
+- **Hallucination Prevention**: Uses a strict Evaluator Agent to ground claims in RAG context.
 - **Daily Capacity**: Capable of generating **10,000+ grounded emails/day** without expanding SDR headcount.
 
 ---

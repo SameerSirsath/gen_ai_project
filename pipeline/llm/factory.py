@@ -12,6 +12,7 @@ from .gemini_client import GeminiLLMClient, GeminiEmbeddingClient
 from .openai_client import OpenAILLMClient, OpenAIEmbeddingClient
 from .groq_client import GroqLLMClient
 from .onnx_client import ONNXLLMClient, ONNXEmbeddingClient
+from .ollama_client import OllamaClient
 
 
 def get_llm(backend: Optional[str] = None) -> LLMClient:
@@ -31,6 +32,8 @@ def get_llm(backend: Optional[str] = None) -> LLMClient:
         return GroqLLMClient()
     elif chosen == "onnx":
         return ONNXLLMClient()
+    elif chosen == "ollama":
+        return OllamaClient()
     else:
         raise ValueError(
             f"Unsupported LLM backend: '{chosen}'. Supported options: 'gemini', 'openai', 'groq', 'onnx'."

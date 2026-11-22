@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Sales Outreach Agent — Multi-Agent RAG Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <h1>AI Sales Outreach Agent</h1>
+          <p class="subtitle">Multi-Agent RAG Pipeline · Local LLM (Ollama) · Hallucination Gate</p>
+        </div>
+      </div>
+      <div class="engine-badge">
+        <span class="pulse-dot"></span>
+        <span>Offline Engine: Ollama</span>
+      </div>
+    </header>
+
+    <main class="dashboard-grid">
+      <!-- Left Column: Input Panel -->
+      <section class="panel input-panel">
+        <div class="panel-header">
+          <h2>Prospect Intelligence</h2>
+          <span class="badge badge-neutral">Input</span>
+        </div>
+
+        <form id="outreach-form" class="form-group">
+          <div class="field">
+            <label for="prospect-name">Target Company / Prospect Name</label>
+            <input 
+              type="text" 
+              id="prospect-name" 
+              placeholder="e.g. Apple, Stripe, Snowflake" 
+              required
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="field">
+            <label for="prospect-context">
+              Prospect Context (Verified RAG Chunks / Company Intelligence)
+            </label>
+            <textarea 
+              id="prospect-context" 
+              rows="12" 
+              placeholder="Paste verified company context, recent product launches, financial highlights, or scraped web/press release chunks..."
+              required
+            ></textarea>
+          </div>
+
+          <button type="submit" id="generate-btn" class="btn btn-primary">
+            <span class="btn-text">Generate Outreach</span>
+            <span class="btn-icon">→</span>
+          </button>
+        </form>
+      </section>
+
+      <!-- Right Column: Output & Agent Verification Panel -->
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <h2>Agent Generation & Verification</h2>
+          <div id="status-badge" class="badge badge-idle">Ready</div>
+        </div>
+
+        <!-- Loading Spinner Container -->
+        <div id="loading-spinner" class="spinner-container hidden">
+          <div class="spinner"></div>
+          <p class="spinner-text">Agents at work: Researcher → Writer → Evaluator...</p>
+        </div>
+
+        <!-- Placeholder when idle -->
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon">✉️</div>
+          <h3>No outreach generated yet</h3>
+          <p>Enter the prospect details on the left and click <strong>Generate Outreach</strong> to trigger the multi-agent pipeline.</p>
+        </div>
+
+        <!-- Results Container -->
+        <div id="results-container" class="results-container hidden">
+          <!-- Hallucination Alert Box -->
+          <div id="alert-banner" class="alert-banner hidden">
+            <div class="alert-title">🚨 Hallucination Detected — Dispatch Blocked</div>
+            <p id="alert-reasoning" class="alert-message"></p>
+            <div id="flagged-section" class="flagged-section hidden">
+              <strong>Flagged Claims:</strong>
+              <ul id="flagged-list" class="flagged-list"></ul>
+            </div>
+          </div>
+
+          <!-- Email Preview Card -->
+          <div class="card email-card">
+            <div class="card-header">
+              <span class="card-title">Generated Email Draft</span>
+              <span id="word-count" class="card-meta"></span>
+            </div>
+            <div class="email-field">
+              <span class="field-label">Subject:</span>
+              <span id="output-subject" class="email-subject"></span>
+            </div>
+            <div class="email-field">
+              <span class="field-label">Body:</span>
+              <div id="output-body" class="email-body"></div>
+            </div>
+          </div>
+
+          <!-- Evaluator Audit Card -->
+          <div class="card audit-card">
+            <div class="card-header">
+              <span class="card-title">Evaluator Quality Gate Audit</span>
+              <span id="audit-verdict" class="audit-verdict"></span>
+            </div>
+            <div class="audit-content">
+              <div class="audit-row">
+                <span class="audit-label">Reasoning:</span>
+                <p id="output-reasoning" class="audit-text"></p>
+              </div>
+              <div class="audit-row">
+                <span class="audit-label">Claims Verified:</span>
+                <div id="claims-used-container" class="tags-container"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
