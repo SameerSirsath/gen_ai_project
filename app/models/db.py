@@ -8,31 +8,25 @@ from datetime import datetime
 from typing import Any, Dict
 from flask_sqlalchemy import SQLAlchemy
 
+from app.models.encrypted_type import EncryptedText
+
 db = SQLAlchemy()
 
 
-class CompanyProfile(db.Model):
+class Company(db.Model):
     """
-    Represents the user's own company profile and value proposition.
+    Represents the user's company profile and value proposition.
     """
-    __tablename__ = "company_profiles"
+    __tablename__ = "companies"
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False, default="CognitiveReach AI")
-    industry = db.Column(db.String(255), default="Enterprise B2B Software & AI Automation")
-    value_proposition = db.Column(
-        db.Text,
-        default="We help enterprise sales teams automate personalized outreach and eliminate hallucinations with multi-agent RAG."
-    )
-    services_offered = db.Column(
-        db.Text,
-        default="AI SDR Agent Deployment, Real-Time Market Intelligence Ingestion, Automated CRM Enrichment, Multi-Agent Email Generation."
-    )
-    case_studies = db.Column(
-        db.Text,
-        default="Boosted sales meeting booking rates by 240% for SaaS clients; reduced research time per prospect from 20 minutes to under 2 seconds."
-    )
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    industry = db.Column(db.String(150))
+    value_proposition = db.Column(db.Text)
+    services_offered = db.Column(db.Text)
+    case_studies = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,8 +36,13 @@ class CompanyProfile(db.Model):
             "value_proposition": self.value_proposition,
             "services_offered": self.services_offered,
             "case_studies": self.case_studies,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+# Alias for backward compatibility
+CompanyProfile = Company
 
 
 class Lead(db.Model):
@@ -52,14 +51,14 @@ class Lead(db.Model):
     """
     __tablename__ = "leads"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     company_name = db.Column(db.String(255), nullable=False)
-    contact_name = db.Column(db.String(255), default="")
-    email = db.Column(db.String(255), default="")
+    contact_name = db.Column(db.String(150), default="")
+    email = db.Column(db.String(255), unique=True)
     website_url = db.Column(db.String(500), default="")
-    status = db.Column(db.String(50), default="Pending")  # Pending, Processing, Drafted, Sent, Failed
-    mode = db.Column(db.String(50), default="Manual")      # Auto, Manual
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(50), default="Pending")  # 'Pending', 'Processing', 'Drafted', 'Sent', 'Failed'
+    mode = db.Column(db.String(50), default="Manual")      # 'Auto', 'Manual'
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
 
     contexts = db.relationship("LeadContext", backref="lead", lazy=True, cascade="all, delete-orphan")
     emails = db.relationship("EmailLog", backref="lead", lazy=True, cascade="all, delete-orphan")
@@ -74,8 +73,8 @@ class Lead(db.Model):
             "status": self.status,
             "mode": self.mode,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at else None,
-            "context_count": len(self.contexts),
-            "email_count": len(self.emails),
+            "context_count": len(self.contexts) if self.contexts else 0,
+            "email_count": len(self.emails) if self.emails else 0,
         }
 
 
@@ -83,23 +82,17 @@ class LeadContext(db.Model):
     """
     Raw intelligence / scraped text gathered for a specific lead.
     """
-    __tablename__ = "lead_contexts"
+    __tablename__ = "lead_context"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     lead_id = db.Column(db.Integer, db.ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
-    raw_text = db.Column(db.Text, nullable=False)
+    raw_text = db.Column(db.Text(length=4294967295), nullable=False)  # LONGTEXT in MySQL
     nlp_processed = db.Column(db.Boolean, default=False)
     vector_synced = db.Column(db.Boolean, default=False)
-    source_type = db.Column(db.String(50), default="Manual")  # Website, News, Manual
-    keywords = db.Column(db.Text, default="[]")  # JSON serialized list of keywords/entities
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    source_type = db.Column(db.String(50), default="Manual")
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
 
     def to_dict(self) -> Dict[str, Any]:
-        import json
-        try:
-            kw = json.loads(self.keywords) if self.keywords else []
-        except Exception:
-            kw = []
         return {
             "id": self.id,
             "lead_id": self.lead_id,
@@ -107,7 +100,6 @@ class LeadContext(db.Model):
             "nlp_processed": self.nlp_processed,
             "vector_synced": self.vector_synced,
             "source_type": self.source_type,
-            "keywords": kw,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at else None,
         }
 
@@ -118,13 +110,14 @@ class EmailLog(db.Model):
     """
     __tablename__ = "email_logs"
 
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     lead_id = db.Column(db.Integer, db.ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
     subject = db.Column(db.String(500), default="")
-    body = db.Column(db.Text, default="")
-    evaluator_score = db.Column(db.Float, default=1.0)
+    body = db.Column(db.Text(length=4294967295), default="")  # LONGTEXT in MySQL
+    evaluator_score = db.Column(db.String(50), default="1.0")
     evaluator_reasoning = db.Column(db.Text, default="")
-    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -135,4 +128,34 @@ class EmailLog(db.Model):
             "evaluator_score": self.evaluator_score,
             "evaluator_reasoning": self.evaluator_reasoning,
             "sent_at": self.sent_at.strftime("%Y-%m-%d %H:%M:%S") if self.sent_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+        }
+
+
+class ApiKey(db.Model):
+    """
+    Stores encrypted API keys for multiple providers (Groq, Gemini, etc.).
+    Column key_value is encrypted at rest using Fernet via EncryptedText.
+    """
+    __tablename__ = "api_keys"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    provider = db.Column(db.String(100), nullable=False)
+    key_alias = db.Column(db.String(150), nullable=False)
+    key_value = db.Column(EncryptedText, nullable=False)  # Encrypted automatically
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self, mask: bool = True) -> Dict[str, Any]:
+        val = self.key_value or ""
+        masked_val = (val[:4] + "****" + val[-4:]) if (mask and len(val) >= 8) else ("****" if mask else val)
+        return {
+            "id": self.id,
+            "provider": self.provider,
+            "key_alias": self.key_alias,
+            "key_value": masked_val,
+            "is_active": self.is_active,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
         }

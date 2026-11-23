@@ -154,48 +154,6 @@ def update_lead(lead_id: int):
     return jsonify({"success": True, "lead": lead.to_dict()}), 200
 
 
-@leads_bp.route("/<int:lead_id>/process", methods=["POST"])
-def process_lead_context(lead_id: int):
-    """
-    Accepts new raw text for a lead, stores to LeadContext,
-    and runs the NLP pipeline + ChromaDB sync in a background thread.
-    """
-    lead = Lead.query.get(lead_id)
-    if not lead:
-        return jsonify({"success": False, "error": "Lead not found."}), 404
-
-    data = request.get_json(force=True, silent=True) or {}
-    raw_text = data.get("raw_text", "").strip()
-    source_type = data.get("source_type", "Manual")
-
-    if not raw_text:
-        return jsonify({"success": False, "error": "Raw text is required."}), 400
-
-    lead_ctx = LeadContext(
-        lead_id=lead_id,
-        raw_text=raw_text,
-        source_type=source_type,
-        nlp_processed=False,
-        vector_synced=False,
-    )
-    db.session.add(lead_ctx)
-    db.session.commit()
-
-    # Launch background thread for NLP + ChromaDB sync
-    app = current_app._get_current_object()
-    threading.Thread(
-        target=_background_process_context,
-        args=(app, lead_ctx.id, lead_id, raw_text),
-        daemon=True
-    ).start()
-
-    return jsonify({
-        "success": True,
-        "message": "Context saved. NLP extraction and ChromaDB indexing started in background.",
-        "context_id": lead_ctx.id,
-    }), 202
-
-
 @leads_bp.route("/<int:lead_id>/generate", methods=["POST"])
 def generate_email(lead_id: int):
     """
