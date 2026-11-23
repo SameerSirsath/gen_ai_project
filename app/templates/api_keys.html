@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% set active_page = "api_keys" %}
+
+{% block title %}LLM API Keys & Multi-Key Routing{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4" data-aos="fade-down">
+  <div>
+    <h1 class="font-heading fs-2 fw-bold mb-1">LLM API Keys & Multi-Key Routing</h1>
+    <p class="text-muted small mb-0">Manage Groq and Gemini API keys. All keys are encrypted at rest with Fernet in MySQL.</p>
+  </div>
+  <div class="d-flex align-items-center gap-2 mt-3 mt-md-0">
+    <button class="btn btn-teal btn-pill px-4" data-bs-toggle="modal" data-bs-target="#addKeyModal">
+      <i class="fa-solid fa-plus me-1"></i> Add API Key
+    </button>
+  </div>
+</div>
+
+<!-- ──────────────── Routing Architecture Banner ──────────────── -->
+<div class="saas-card bg-white mb-4" data-aos="fade-up">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="kpi-icon-circle" style="width: 50px; height: 50px; font-size: 1.3rem;">
+        <i class="fa-solid fa-network-wired"></i>
+      </div>
+      <div>
+        <h4 class="font-heading fs-5 fw-bold mb-1 text-navy" style="color: #1B264F;">Failover Cascade Logic</h4>
+        <p class="text-muted small mb-0">
+          Requests attempt active <strong>Groq</strong> keys (<code>llama-3.3-70b-versatile</code>). If exhausted or rate-limited (429), the router seamlessly cascades to <strong>Gemini</strong> (<code>gemini-2.5-flash</code>).
+        </p>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge bg-primary-subtle text-primary border border-primary px-3 py-2 rounded-pill small">
+        <i class="fa-solid fa-microchip me-1"></i> Groq Primary
+      </span>
+      <i class="fa-solid fa-arrow-right text-muted small"></i>
+      <span class="badge bg-success-subtle text-success border border-success px-3 py-2 rounded-pill small">
+        <i class="fa-solid fa-bolt me-1"></i> Gemini Failover
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── API Keys Table ──────────────── -->
+<div class="saas-card" data-aos="fade-up" data-aos-delay="100">
+  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-3">
+    <h3 class="font-heading fs-4 fw-bold mb-0">Configured Key Store</h3>
+    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="loadApiKeys()">
+      <i class="fa-solid fa-rotate-right me-1"></i> Refresh Table
+    </button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="saas-table">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Alias / Owner</th>
+          <th>Masked Key</th>
+          <th>Routing Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="apiKeysTableBody">
+        <tr>
+          <td colspan="5" class="text-center py-4 text-muted">
+            <span class="spinner-border spinner-border-sm me-2"></span> Loading encrypted keys...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ──────────────── Modal: Add Key ──────────────── -->
+<div class="modal fade" id="addKeyModal" tabindex="-1" aria-labelledby="addKeyModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom px-4 pt-4 pb-3">
+        <div>
+          <h5 class="modal-title font-heading fw-bold" id="addKeyModalLabel">Add New LLM API Key</h5>
+          <p class="text-muted small mb-0">Key is encrypted before writing to MySQL.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="addKeyForm" onsubmit="handleAddKeySubmit(event)">
+        <div class="modal-body px-4 py-3">
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-dark">LLM Provider</label>
+            <select class="form-select rounded-3" id="keyProvider" required>
+              <option value="groq" selected>Groq (LLaMA 3.3 70B Versatile)</option>
+              <option value="gemini">Google Gemini (Gemini 2.5 Flash)</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-dark">Key Alias / Description</label>
+            <input type="text" class="form-control rounded-3" id="keyAlias" placeholder="e.g. Contributor 5 - Groq Key" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-dark">API Key Value</label>
+            <input type="password" class="form-control rounded-3" id="keyValue" placeholder="gsk_... or AQ...." required>
+            <div class="form-text small">Plaintext value is converted to Fernet ciphertext upon save.</div>
+          </div>
+        </div>
+        <div class="modal-footer border-top px-4 py-3">
+          <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-teal btn-pill px-4">
+            <i class="fa-solid fa-lock me-1"></i> Save Encrypted Key
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  loadApiKeys();
+});
+</script>
+{% endblock %}

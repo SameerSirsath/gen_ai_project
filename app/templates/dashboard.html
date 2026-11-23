@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}Dashboard Overview{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4" data-aos="fade-down">
+  <div>
+    <h1 class="font-heading fs-2 fw-bold mb-1">Outreach Intelligence Dashboard</h1>
+    <p class="text-muted small mb-0">Real-time overview of active leads, multi-agent generations, and LLM key routing.</p>
+  </div>
+  <div class="d-flex align-items-center gap-2 mt-3 mt-md-0">
+    <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-teal btn-pill px-4">
+      <i class="fa-solid fa-plus me-1"></i> Add Prospect
+    </a>
+  </div>
+</div>
+
+<!-- ──────────────── Top KPI Cards ──────────────── -->
+<div class="row g-4 mb-4" data-aos="fade-up">
+  <!-- KPI 1: Total Leads -->
+  <div class="col-md-4">
+    <div class="kpi-card">
+      <div class="kpi-icon-circle">
+        <i class="fa-solid fa-users-viewfinder"></i>
+      </div>
+      <div>
+        <div class="kpi-value">{{ total_leads }}</div>
+        <div class="kpi-label">Total Prospects</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI 2: Emails Sent -->
+  <div class="col-md-4">
+    <div class="kpi-card">
+      <div class="kpi-icon-circle">
+        <i class="fa-solid fa-paper-plane"></i>
+      </div>
+      <div>
+        <div class="kpi-value">{{ sent_emails }}</div>
+        <div class="kpi-label">Dispatched Emails</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI 3: Hallucinations Blocked -->
+  <div class="col-md-4">
+    <div class="kpi-card">
+      <div class="kpi-icon-circle">
+        <i class="fa-solid fa-shield-virus"></i>
+      </div>
+      <div>
+        <div class="kpi-value">{{ hallucinations_blocked }}</div>
+        <div class="kpi-label">Hallucinations Blocked</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── Middle Row: Chart.js 7-Day Performance ──────────────── -->
+<div class="row g-4 mb-4" data-aos="fade-up" data-aos-delay="100">
+  <div class="col-12">
+    <div class="saas-card">
+      <div class="d-flex align-items-center justify-content-between mb-4 border-bottom pb-3">
+        <div>
+          <h3 class="font-heading fs-4 fw-bold mb-1">Emails Generated vs Dispatched</h3>
+          <p class="text-muted small mb-0">Multi-agent drafting throughput and SMTP dispatch conversion over the last 7 days.</p>
+        </div>
+        <span class="badge bg-light text-teal border border-teal-subtle px-3 py-2 rounded-pill small fw-semibold" style="color: #00B4A0;">
+          <i class="fa-solid fa-circle-nodes me-1"></i> Live Activity Feed
+        </span>
+      </div>
+      <div style="height: 320px; position: relative;">
+        <canvas id="outreachChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── Bottom Row: Recent 5 Leads Table ──────────────── -->
+<div class="row g-4" data-aos="fade-up" data-aos-delay="200">
+  <div class="col-12">
+    <div class="saas-card">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <div>
+          <h3 class="font-heading fs-4 fw-bold mb-1">Recent Prospects</h3>
+          <p class="text-muted small mb-0">Latest additions to your outreach pipeline and their live status.</p>
+        </div>
+        <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-sm btn-teal-outline btn-pill px-3">
+          View All Prospects <i class="fa-solid fa-arrow-right ms-1"></i>
+        </a>
+      </div>
+
+      <div class="table-responsive">
+        <table class="saas-table">
+          <thead>
+            <tr>
+              <th>Company & Contact</th>
+              <th>Status</th>
+              <th>Mode</th>
+              <th>Created</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if recent_leads %}
+              {% for lead in recent_leads %}
+                <tr>
+                  <td>
+                    <div class="d-flex align-items-center gap-3">
+                      <div class="kpi-icon-circle" style="width: 40px; height: 40px; font-size: 1rem;">
+                        <i class="fa-solid fa-building"></i>
+                      </div>
+                      <div>
+                        <div class="fw-bold text-dark">{{ lead.company_name }}</div>
+                        <div class="text-muted small">{{ lead.contact_name or 'No contact specified' }} {% if lead.email %}• {{ lead.email }}{% endif %}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="status-badge {{ lead.status.lower() }}">
+                      <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i>
+                      {{ lead.status }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge {{ 'bg-info-subtle text-info' if lead.mode == 'Auto' else 'bg-secondary-subtle text-secondary' }} rounded-pill px-3 py-1">
+                      {{ lead.mode }}
+                    </span>
+                  </td>
+                  <td class="text-muted small">
+                    {{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else 'Just now' }}
+                  </td>
+                  <td class="text-end">
+                    <a href="{{ url_for('dashboard.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-teal btn-pill px-3">
+                      <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Workspace
+                    </a>
+                  </td>
+                </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5" class="text-center py-4 text-muted">
+                  No prospects added yet. Click "+ Add Prospect" above to start.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const ctx = document.getElementById('outreachChart');
+  if (!ctx) return;
+
+  const labels = {{ chart_labels | tojson }};
+  const generatedData = {{ chart_generated | tojson }};
+  const sentData = {{ chart_sent | tojson }};
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Emails Drafted by AI Writer',
+          data: generatedData,
+          borderColor: '#1B264F',
+          backgroundColor: 'rgba(27, 38, 79, 0.05)',
+          tension: 0.35,
+          borderWidth: 3,
+          fill: true,
+          pointBackgroundColor: '#1B264F',
+          pointRadius: 5
+        },
+        {
+          label: 'Emails Dispatched via SMTP',
+          data: sentData,
+          borderColor: '#00B4A0',
+          backgroundColor: 'rgba(0, 180, 160, 0.15)',
+          tension: 0.35,
+          borderWidth: 3,
+          fill: true,
+          pointBackgroundColor: '#00B4A0',
+          pointRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            boxWidth: 14,
+            usePointStyle: true,
+            font: { family: "'Inter', sans-serif", size: 12, weight: 500 }
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1B264F',
+          titleFont: { family: "'Playfair Display', serif", size: 13 },
+          bodyFont: { family: "'Inter', sans-serif", size: 12 },
+          cornerRadius: 8,
+          padding: 12
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: '#E8EEF3' },
+          ticks: { font: { family: "'Inter', sans-serif" } }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { font: { family: "'Inter', sans-serif" } }
+        }
+      }
+    }
+  });
+});
+</script>
+{% endblock %}

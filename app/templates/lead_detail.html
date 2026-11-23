@@ -88,14 +88,6 @@
                 </div>
               </div>
             {% endif %}
-
-            <div class="mt-2 d-flex align-items-center gap-2">
-              {% if ctx.vector_synced %}
-                <span class="badge bg-success bg-opacity-25 text-success small" style="font-size: 0.65rem;"><i class="bi bi-check2-circle"></i> ChromaDB Synced</span>
-              {% else %}
-                <span class="badge bg-warning bg-opacity-25 text-warning small" style="font-size: 0.65rem;"><i class="bi bi-hourglass-split"></i> Indexing...</span>
-              {% endif %}
-            </div>
           </div>
           {% endfor %}
         {% else %}

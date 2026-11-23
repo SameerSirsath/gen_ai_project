@@ -89,6 +89,29 @@ def delete_api_key(key_id: int):
     }), 200
 
 
+@api_bp.route("/keys/<int:key_id>/toggle", methods=["PATCH", "POST"])
+def toggle_api_key(key_id: int):
+    """
+    Toggles the is_active status of an API key.
+    """
+    key_obj = ApiKey.query.get(key_id)
+    if not key_obj:
+        return jsonify({"error": f"API key with ID {key_id} not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    if "is_active" in data:
+        key_obj.is_active = bool(data["is_active"])
+    else:
+        key_obj.is_active = not key_obj.is_active
+
+    db.session.commit()
+    return jsonify({
+        "status": "success",
+        "message": f"API key {key_id} status updated.",
+        "is_active": key_obj.is_active,
+    }), 200
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. LEAD CONTEXT PROCESSING & VECTOR SYNC
 # ─────────────────────────────────────────────────────────────────────────────

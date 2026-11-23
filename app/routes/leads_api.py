@@ -194,6 +194,18 @@ def generate_email(lead_id: int):
     evaluation = result.get("evaluation") or {}
     is_grounded = bool(result.get("approved"))
     status_label = "PASSED" if is_grounded else "BLOCKED"
+    evaluator_score = 1.0 if is_grounded else 0.4
+    evaluator_reasoning = evaluation.get("reasoning", "") or result.get("reasoning", "Verified claims against company knowledge base.")
+
+    # Save EmailLog to MySQL
+    email_log = EmailLog(
+        lead_id=lead.id,
+        subject=draft.get("subject", ""),
+        body=draft.get("body", ""),
+        evaluator_score=str(evaluator_score),
+        evaluator_reasoning=evaluator_reasoning
+    )
+    db.session.add(email_log)
 
     # Update lead status
     lead.status = "Drafted"
@@ -205,14 +217,22 @@ def generate_email(lead_id: int):
         "is_grounded": is_grounded,
         "subject": draft.get("subject", ""),
         "body": draft.get("body", ""),
+        "email": {
+            "id": email_log.id,
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "evaluator_score": evaluator_score,
+            "evaluator_reasoning": evaluator_reasoning,
+        },
         "claims_used": draft.get("claims_used", []),
         "flagged_claims": evaluation.get("flagged_claims", []) or result.get("flagged_claims", []),
-        "reasoning": evaluation.get("reasoning", "") or result.get("reasoning", ""),
+        "reasoning": evaluator_reasoning,
         "signals": result.get("signals", {}),
     }), 200
 
 
 @leads_bp.route("/<int:lead_id>/send", methods=["POST"])
+@leads_bp.route("/<int:lead_id>/send-email", methods=["POST"])
 def dispatch_email(lead_id: int):
     """
     Sends email draft via SMTP and logs to EmailLog table.

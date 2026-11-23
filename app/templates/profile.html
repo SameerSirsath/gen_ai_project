@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set active_page = "profile" %}
+
+{% block title %}Company Profile & AI Knowledge Base{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-4" data-aos="fade-down">
+  <div>
+    <h1 class="font-heading fs-2 fw-bold mb-1">Company Profile & Knowledge Base</h1>
+    <p class="text-muted small mb-0">Define your value proposition, case studies, and offerings to guide AI outreach agents.</p>
+  </div>
+</div>
+
+<div class="row g-4" data-aos="fade-up">
+  <!-- Left Column: Company Profile Form -->
+  <div class="col-lg-8">
+    <div class="saas-card">
+      <div class="d-flex align-items-center justify-content-between border-bottom pb-3 mb-4">
+        <div>
+          <h3 class="font-heading fs-4 fw-bold mb-1">Our Value Proposition & Pitch</h3>
+          <p class="text-muted small mb-0">These details are converted into semantic vector embeddings for RAG email generation.</p>
+        </div>
+        <div class="kpi-icon-circle" style="width: 44px; height: 44px; font-size: 1.1rem;">
+          <i class="fa-solid fa-bullseye"></i>
+        </div>
+      </div>
+
+      <form id="companyProfileForm" onsubmit="handleCompanyProfileSubmit(event)">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small text-dark">Company Name</label>
+            <input type="text" class="form-control rounded-3" id="companyName" value="{{ company.name or '' }}" required placeholder="e.g. CognitiveReach AI">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small text-dark">Industry / Market Vertical</label>
+            <input type="text" class="form-control rounded-3" id="companyIndustry" value="{{ company.industry or '' }}" placeholder="e.g. Enterprise B2B SaaS">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold small text-dark">Core Value Proposition</label>
+          <textarea class="form-control rounded-3" id="valueProposition" rows="3" placeholder="What distinct value do you deliver to target accounts?">{{ company.value_proposition or '' }}</textarea>
+          <div class="form-text small">Used by the AI Writer agent to formulate your primary hook.</div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold small text-dark">Products & Services Offered</label>
+          <textarea class="form-control rounded-3" id="servicesOffered" rows="3" placeholder="List core offerings and key features...">{{ company.services_offered or '' }}</textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold small text-dark">Customer Case Studies & Verified Metrics</label>
+          <textarea class="form-control rounded-3" id="caseStudies" rows="3" placeholder="Quantifiable outcomes (e.g., 'Boosted conversion rates by 240% for SaaS clients')...">{{ company.case_studies or '' }}</textarea>
+          <div class="form-text small">Metrics cited by the Writer Agent are strictly verified by the Evaluator Agent against this field.</div>
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between pt-3 border-top">
+          <span class="text-muted small">
+            <i class="fa-solid fa-clock-rotate-left me-1"></i> Last updated: {{ company.updated_at.strftime('%b %d, %Y %H:%M') if company.updated_at else 'Initial setup' }}
+          </span>
+          <button type="submit" id="saveCompanyBtn" class="btn btn-teal btn-pill px-4 py-2 fs-6">
+            <i class="fa-solid fa-cloud-arrow-up me-1"></i> Save & Sync to AI
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Right Column: User Settings & Vector Stats -->
+  <div class="col-lg-4">
+    <!-- User Settings Card -->
+    <div class="saas-card mb-4">
+      <div class="d-flex align-items-center gap-3 mb-3 border-bottom pb-3">
+        <div class="user-avatar-circle" style="width: 50px; height: 50px; font-size: 1.2rem;">
+          {{ (session.get('user_name', 'Admin')[:2]).upper() }}
+        </div>
+        <div>
+          <div class="fw-bold fs-5 text-dark">{{ session.get('user_name', 'Sales Admin') }}</div>
+          <span class="text-muted small">{{ session.get('user_email', 'admin@cognitivereach.ai') }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Account Role</label>
+        <div class="fw-semibold text-dark">Enterprise SDR Administrator</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Database Mode</label>
+        <span class="badge bg-success-subtle text-success px-3 py-1 rounded-pill">
+          <i class="fa-solid fa-server me-1"></i> MySQL (Encrypted at Rest)
+        </span>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Vector Storage</label>
+        <span class="badge bg-primary-subtle text-primary px-3 py-1 rounded-pill">
+          <i class="fa-solid fa-vector-square me-1"></i> ChromaDB (Cosine Space)
+        </span>
+      </div>
+    </div>
+
+    <!-- How RAG Works Card -->
+    <div class="saas-card bg-light border">
+      <h4 class="font-heading fs-5 fw-bold mb-3 text-navy" style="color: #1B264F;">
+        <i class="fa-solid fa-lightbulb text-teal me-1" style="color: #00B4A0;"></i> How AI Context Works
+      </h4>
+      <p class="text-muted small lh-base mb-3">
+        When you click <strong>Save & Sync</strong>, your pitch is embedded via sentence transformers into ChromaDB.
+      </p>
+      <ul class="text-muted small ps-3 mb-0 lh-lg">
+        <li>The <strong>AI Writer</strong> matches the prospect's pain points against your value proposition.</li>
+        <li>The <strong>AI Evaluator</strong> cross-examines case study statistics to block hallucinations.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

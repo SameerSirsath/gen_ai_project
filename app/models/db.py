@@ -159,3 +159,155 @@ class ApiKey(db.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
         }
+
+
+class User(db.Model):
+    """
+    User model for authentication, role-based access, and enterprise profiles.
+    """
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(100), unique=True, nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    full_name = db.Column(db.String(150), default="")
+    role = db.Column(db.String(50), default="admin")  # 'admin', 'manager', 'sdr', 'viewer'
+    is_active = db.Column(db.Boolean, default=True)
+    avatar_url = db.Column(db.String(500), nullable=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    # Relationships
+    sessions = db.relationship("UserSession", backref="user", lazy=True, cascade="all, delete-orphan")
+    resets = db.relationship("PasswordReset", backref="user", lazy=True, cascade="all, delete-orphan")
+    settings = db.relationship("UserSetting", backref="user", uselist=False, lazy=True, cascade="all, delete-orphan")
+    activities = db.relationship("ActivityLog", backref="user", lazy=True)
+
+    def set_password(self, password: str) -> None:
+        from werkzeug.security import generate_password_hash
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        from werkzeug.security import check_password_hash
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "full_name": self.full_name,
+            "role": self.role,
+            "is_active": self.is_active,
+            "avatar_url": self.avatar_url,
+            "last_login_at": self.last_login_at.strftime("%Y-%m-%d %H:%M:%S") if self.last_login_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
+
+class UserSession(db.Model):
+    """
+    Tracks active user login sessions, devices, and expiration tokens.
+    """
+    __tablename__ = "user_sessions"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_token = db.Column(db.String(255), unique=True, nullable=False)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "ip_address": self.ip_address,
+            "user_agent": self.user_agent,
+            "expires_at": self.expires_at.strftime("%Y-%m-%d %H:%M:%S") if self.expires_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+        }
+
+
+class PasswordReset(db.Model):
+    """
+    Stores secure tokens for password recovery requests.
+    """
+    __tablename__ = "password_resets"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token = db.Column(db.String(255), unique=True, nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "is_used": self.is_used,
+            "expires_at": self.expires_at.strftime("%Y-%m-%d %H:%M:%S") if self.expires_at else None,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+        }
+
+
+class UserSetting(db.Model):
+    """
+    Stores user preferences, UI theme, email signatures, and defaults.
+    """
+    __tablename__ = "user_settings"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+    theme = db.Column(db.String(50), default="light")
+    notifications_enabled = db.Column(db.Boolean, default=True)
+    email_signature = db.Column(db.Text, nullable=True)
+    default_llm_provider = db.Column(db.String(50), default="groq")
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "theme": self.theme,
+            "notifications_enabled": self.notifications_enabled,
+            "email_signature": self.email_signature,
+            "default_llm_provider": self.default_llm_provider,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
+
+class ActivityLog(db.Model):
+    """
+    Audit log tracking user actions and events for security and transparency.
+    """
+    __tablename__ = "activity_logs"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action = db.Column(db.String(100), nullable=False)  # 'LOGIN', 'CREATE_LEAD', 'GENERATE_EMAIL', 'SEND_EMAIL'
+    entity_type = db.Column(db.String(50), nullable=True)  # 'lead', 'email', 'api_key', 'company'
+    entity_id = db.Column(db.Integer, nullable=True)
+    details = db.Column(db.Text, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "action": self.action,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "details": self.details,
+            "ip_address": self.ip_address,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+        }
+
+

@@ -39,7 +39,7 @@
 
         <div class="d-flex justify-content-between align-items-center">
           <span class="text-secondary small">
-            Last Synced: <span id="last-updated">{{ company.updated_at.strftime('%Y-%m-%d %H:%M:%S') if company.updated_at else 'Never' }}</span>
+            Last Updated: <span id="last-updated">{{ company.updated_at.strftime('%Y-%m-%d %H:%M:%S') if company.updated_at else 'Never' }}</span>
           </span>
           <button type="submit" id="save-sync-btn" class="btn btn-primary px-4 py-2">
             <span id="btn-spinner" class="spinner-border spinner-border-sm me-2 d-none" role="status"></span>
