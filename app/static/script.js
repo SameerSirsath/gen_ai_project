@@ -23,26 +23,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const wordCount = document.getElementById("word-count");
   const auditVerdict = document.getElementById("audit-verdict");
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
 
-    const prospectName = prospectNameInput.value.trim();
-    const context = contextInput.value.trim();
+      const prospectName = prospectNameInput ? prospectNameInput.value.trim() : "";
+      const context = contextInput ? contextInput.value.trim() : "";
 
-    if (!prospectName || !context) {
-      alert("Please provide both Prospect Name and Context.");
-      return;
-    }
+      if (!prospectName || !context) {
+        alert("Please provide both Prospect Name and Context.");
+        return;
+      }
 
-    // UI state: loading
-    generateBtn.disabled = true;
-    generateBtn.querySelector(".btn-text").textContent = "Running Pipeline...";
-    emptyState.classList.add("hidden");
-    resultsContainer.classList.add("hidden");
-    loadingSpinner.classList.remove("hidden");
+      // UI state: loading
+      if (generateBtn) {
+        generateBtn.disabled = true;
+        const btnText = generateBtn.querySelector(".btn-text");
+        if (btnText) btnText.textContent = "Running Pipeline...";
+      }
+      if (emptyState) emptyState.classList.add("hidden");
+      if (resultsContainer) resultsContainer.classList.remove("hidden");
+      if (loadingSpinner) loadingSpinner.classList.remove("hidden");
 
-    statusBadge.className = "badge badge-idle";
-    statusBadge.textContent = "Processing...";
+      if (statusBadge) {
+        statusBadge.className = "badge badge-idle";
+        statusBadge.textContent = "Processing...";
+      }
 
     try {
       const response = await fetch("/api/generate", {
@@ -125,14 +131,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
     } catch (err) {
-      loadingSpinner.classList.add("hidden");
-      emptyState.classList.remove("hidden");
-      statusBadge.className = "badge badge-idle";
-      statusBadge.textContent = "Error";
+      if (loadingSpinner) loadingSpinner.classList.add("hidden");
+      if (emptyState) emptyState.classList.remove("hidden");
+      if (statusBadge) {
+        statusBadge.className = "badge badge-idle";
+        statusBadge.textContent = "Error";
+      }
       alert(`Network or Server Error: ${err.message}`);
     } finally {
-      generateBtn.disabled = false;
-      generateBtn.querySelector(".btn-text").textContent = "Generate Outreach";
+      if (generateBtn) {
+        generateBtn.disabled = false;
+        const btnText = generateBtn.querySelector(".btn-text");
+        if (btnText) btnText.textContent = "Generate Outreach";
+      }
     }
   });
+}
 });

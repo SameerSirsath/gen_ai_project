@@ -9,8 +9,14 @@
     <h1 class="font-heading fs-2 fw-bold mb-1">Outreach Intelligence Dashboard</h1>
     <p class="text-muted small mb-0">Real-time overview of active leads, multi-agent generations, and LLM key routing.</p>
   </div>
-  <div class="d-flex align-items-center gap-2 mt-3 mt-md-0">
-    <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-teal btn-pill px-4">
+  <div class="d-flex align-items-center gap-2 mt-3 mt-md-0 flex-wrap">
+    <a href="{{ url_for('leads_api.download_demo_excel') }}" class="btn btn-outline-secondary btn-pill px-3 py-2 text-decoration-none shadow-sm">
+      <i class="fa-solid fa-file-excel text-success me-1"></i> Demo 10-Company Excel
+    </a>
+    <button class="btn btn-outline-teal btn-pill px-3 py-2" data-bs-toggle="modal" data-bs-target="#uploadExcelModal">
+      <i class="fa-solid fa-file-arrow-up me-1"></i> Upload Leads Excel
+    </button>
+    <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-teal btn-pill px-4 py-2">
       <i class="fa-solid fa-plus me-1"></i> Add Prospect
     </a>
   </div>
@@ -99,7 +105,7 @@
               <th>Company & Contact</th>
               <th>Status</th>
               <th>Mode</th>
-              <th>Created</th>
+              <th>Mail History</th>
               <th class="text-end">Action</th>
             </tr>
           </thead>
@@ -125,29 +131,121 @@
                     </span>
                   </td>
                   <td>
-                    <span class="badge {{ 'bg-info-subtle text-info' if lead.mode == 'Auto' else 'bg-secondary-subtle text-secondary' }} rounded-pill px-3 py-1">
+                    <span class="badge {{ 'bg-success-subtle text-success border border-success' if lead.mode == 'Excel' else ('bg-info-subtle text-info' if lead.mode == 'Auto' else 'bg-secondary-subtle text-secondary') }} rounded-pill px-3 py-1">
                       {{ lead.mode }}
                     </span>
                   </td>
-                  <td class="text-muted small">
-                    {{ lead.created_at.strftime('%b %d, %Y') if lead.created_at else 'Just now' }}
+                  <td>
+                    <button class="btn btn-sm btn-light border rounded-pill px-3" onclick="openCompanyMailHistory({{ lead.id }}, '{{ lead.company_name|replace('\'', '\\\'') }}')">
+                      <i class="fa-solid fa-clock-rotate-left text-teal me-1"></i> Mail History
+                    </button>
                   </td>
                   <td class="text-end">
-                    <a href="{{ url_for('dashboard.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-teal btn-pill px-3">
-                      <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Workspace
-                    </a>
+                    <div class="d-flex align-items-center justify-content-end gap-2">
+                      <a href="{{ url_for('leads_api.export_lead_emails_csv', lead_id=lead.id) }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Export CSV">
+                        <i class="fa-solid fa-file-csv text-success"></i>
+                      </a>
+                      <a href="{{ url_for('dashboard.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-teal btn-pill px-3">
+                        <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Workspace
+                      </a>
+                    </div>
                   </td>
                 </tr>
               {% endfor %}
             {% else %}
               <tr>
                 <td colspan="5" class="text-center py-4 text-muted">
-                  No prospects added yet. Click "+ Add Prospect" above to start.
+                  No prospects added yet. Click "+ Add Prospect" or "Upload Leads Excel" above to start.
                 </td>
               </tr>
             {% endif %}
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── Modal: Upload Excel Sheet of Target Leads ──────────────── -->
+<div class="modal fade" id="uploadExcelModal" tabindex="-1" aria-labelledby="uploadExcelModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom px-4 pt-4 pb-3">
+        <div>
+          <h5 class="modal-title font-heading fw-bold" id="uploadExcelModalLabel">Upload Target Leads Excel Sheet</h5>
+          <p class="text-muted small mb-0">Directly import company profiles, contacts, and auto-sync into ChromaDB vector store.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body px-4 py-3">
+        <form id="excelUploadForm" onsubmit="handleExcelUpload(event)">
+          <div class="p-4 border-2 border-dashed rounded-4 text-center bg-light mb-3" style="border: 2px dashed #CBD5E1; cursor: pointer;" onclick="document.getElementById('excelFileInput').click()">
+            <i class="fa-solid fa-file-excel fa-3x text-success mb-2"></i>
+            <h6 class="fw-bold mb-1">Click to select or drag and drop Excel sheet</h6>
+            <p class="text-muted small mb-2">Supports .xlsx, .xls, or .csv files with company name, email, website, and context</p>
+            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" class="d-none" onchange="updateExcelFileName(this)" required>
+            <div id="selectedExcelName" class="badge bg-white text-dark border p-2 mt-1 hidden">
+              <i class="fa-solid fa-paperclip text-teal me-1"></i> <span id="excelFileLabel"></span>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 border mb-3 small">
+            <div>
+              <i class="fa-solid fa-circle-check text-success me-1"></i> <strong>Includes Vector DB Pipeline:</strong> All imported company intelligence is embedded & stored in ChromaDB.
+            </div>
+            <a href="{{ url_for('leads_api.download_demo_excel') }}" class="text-teal fw-semibold text-decoration-none">
+              Download Template
+            </a>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 pt-3 border-top">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" id="uploadExcelBtn" class="btn btn-teal btn-pill px-4">
+              <i class="fa-solid fa-cloud-arrow-up me-1"></i> Ingest & Load to Dashboard
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────────── Modal: Company-Wise Mail History Box ──────────────── -->
+<div class="modal fade" id="companyMailHistoryModal" tabindex="-1" aria-labelledby="mailHistoryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header border-bottom px-4 pt-4 pb-3">
+        <div class="d-flex align-items-center gap-3">
+          <div class="kpi-icon-circle" style="width: 44px; height: 44px;">
+            <i class="fa-solid fa-inbox"></i>
+          </div>
+          <div>
+            <h5 class="modal-title font-heading fw-bold mb-0" id="mailHistoryCompanyName">Company Mail History</h5>
+            <p class="text-muted small mb-0" id="mailHistoryContactInfo">Complete outbound communications and hallucination fact-check log</p>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <a id="exportCompanyCsvBtn" href="#" class="btn btn-sm btn-outline-teal rounded-pill px-3">
+            <i class="fa-solid fa-file-csv text-success me-1"></i> Export to CSV
+          </a>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+      </div>
+
+      <div class="modal-body px-4 py-3" style="max-height: 65vh; overflow-y: auto;">
+        <div id="mailHistoryLoading" class="text-center py-4">
+          <div class="spinner-border text-teal" role="status"></div>
+          <p class="text-muted small mt-2">Loading complete company mail records...</p>
+        </div>
+        <div id="mailHistoryEmpty" class="text-center py-5 hidden">
+          <i class="fa-regular fa-envelope-open fa-3x text-secondary mb-2"></i>
+          <h6 class="fw-bold">No Emails Dispatched Yet</h6>
+          <p class="text-muted small">No emails have been generated or sent for this prospect. Open Workspace to draft outreach.</p>
+        </div>
+        <div id="mailHistoryList" class="d-flex flex-column gap-3 hidden">
+          <!-- Populated dynamically via JS -->
+        </div>
       </div>
     </div>
   </div>

@@ -17,7 +17,6 @@ load_dotenv()
 from app import create_app
 
 app = create_app()
-app.config["ENCRYPTION_KEY"] = os.getenv("ENCRYPTION_KEY")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

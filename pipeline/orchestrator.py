@@ -10,11 +10,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from pipeline.llm.ollama_client import OllamaClient
 from pipeline.schemas import ResearchSignals, WriterOutput, EvaluationResult
-from pipeline.agents.researcher import extract_signals
-from pipeline.agents.writer import draft_email
-from pipeline.agents.evaluator import evaluate_email
+from pipeline.agents.langgraph_workflow import run_langgraph_pipeline
 
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -70,16 +67,14 @@ def run_agent_pipeline(
     company_context: Optional[str] = None
 ) -> dict:
     """
-    Runs the multi-agent sales outreach pipeline:
+    Runs the multi-agent sales outreach pipeline via LangGraph:
     1. Researcher Agent -> extracts signals (pain points, news)
     2. Writer Agent     -> drafts concise 3-sentence cold email pitching our solution
     3. Evaluator Agent  -> strict hallucination gate check
+    4. Reflection loop  -> auto-corrects ungrounded drafts
     """
     try:
-        # Step 1: Initialize Local LLM Client
-        llm = OllamaClient()
-
-        # Step 1b: Fetch our company profile context if not explicitly provided
+        # Step 1: Fetch our company profile context if not explicitly provided
         if not company_context:
             try:
                 from app.services.vector_service import search_company_profile
@@ -87,54 +82,37 @@ def run_agent_pipeline(
             except Exception:
                 company_context = ""
 
-        # Step 2: Researcher Agent
-        signals: ResearchSignals = extract_signals(prospect_name, context, llm_client=llm)
-        print(f"[Researcher] Found signals: {signals.model_dump_json()}")
-
-        # Step 3: Writer Agent (pitches our services to their pain point)
-        draft: WriterOutput = draft_email(
-            signals,
-            context,
-            llm_client=llm,
+        # Step 2: Run LangGraph Workflow
+        result = run_langgraph_pipeline(
+            prospect_name=prospect_name,
+            context=context,
             company_context=company_context
         )
-        print(f"[Writer] Drafted email: {draft.model_dump_json()}")
 
-        # Step 4: Evaluator Agent
-        combined_verification_context = (
-            f"Prospect Context:\n{context}\n\n"
-            f"Our Company Profile & Value Proposition:\n{company_context or 'Enterprise B2B Automation Solutions'}"
-        )
-        eval_result: EvaluationResult = evaluate_email(draft, combined_verification_context, llm_client=llm)
-        print(f"[Evaluator] Fact-check status: is_grounded={eval_result.is_grounded}")
+        draft = result.get("draft") or {}
+        evaluation = result.get("evaluation") or {}
+        approved = result.get("approved", False)
 
-        # Step 5: Hallucination Gate Decision
-        if not eval_result.is_grounded:
-            print(f"🚨 HALLUCINATION BLOCKED: {eval_result.reasoning}")
-            return {
-                "success": False,
-                "approved": False,
-                "signals": signals.model_dump(),
-                "draft": draft.model_dump(),
-                "evaluation": eval_result.model_dump(),
-                "reasoning": eval_result.reasoning,
-                "flagged_claims": eval_result.flagged_claims,
-            }
-
-        print("✅ EMAIL APPROVED")
-        _save_dispatched_email(prospect_name, draft, eval_result)
+        if approved and draft:
+            try:
+                from pipeline.schemas import WriterOutput, EvaluationResult
+                w_out = WriterOutput.model_validate(draft)
+                e_out = EvaluationResult.model_validate(evaluation)
+                _save_dispatched_email(prospect_name, w_out, e_out)
+            except Exception:
+                pass
 
         return {
             "success": True,
-            "approved": True,
-            "signals": signals.model_dump(),
-            "draft": draft.model_dump(),
-            "evaluation": eval_result.model_dump(),
-            "email": {
-                "subject": draft.subject,
-                "body": draft.body,
-                "claims_used": draft.claims_used,
-            },
+            "approved": approved,
+            "signals": result.get("signals", {}),
+            "draft": draft,
+            "evaluation": evaluation,
+            "reasoning": result.get("reasoning", ""),
+            "flagged_claims": result.get("flagged_claims", []),
+            "workflow_engine": "LangGraph",
+            "revision_count": result.get("revision_count", 0),
+            "logs": result.get("logs", []),
         }
 
     except Exception as e:
@@ -143,6 +121,7 @@ def run_agent_pipeline(
             "success": False,
             "approved": False,
             "error": str(e),
+            "workflow_engine": "LangGraph",
         }
 
 

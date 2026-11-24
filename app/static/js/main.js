@@ -290,7 +290,7 @@ async function handleCreateLead(event, mode) {
 
 // ──────────────── 4. AI Agent Workspace (NLP, Generation, SMTP) ────────────────
 async function syncLeadContextToChroma(leadId) {
-  const rawTextEl = document.getElementById('workspaceRawText');
+  const rawTextEl = document.getElementById('prospect-context') || document.getElementById('workspaceRawText');
   const btn = document.getElementById('syncVectorBtn');
   const rawText = rawTextEl ? rawTextEl.value.trim() : '';
 
@@ -394,8 +394,10 @@ async function generateAIEmail(leadId) {
 
 async function sendEmailSMTP(leadId) {
   const btn = document.getElementById('sendEmailBtn');
-  const subject = document.getElementById('emailSubject').value.trim();
-  const body = document.getElementById('emailBody').value.trim();
+  const subjectEl = document.getElementById('emailSubject') || document.getElementById('output-subject');
+  const bodyEl = document.getElementById('emailBody') || document.getElementById('output-body');
+  const subject = (subjectEl ? (subjectEl.value !== undefined ? subjectEl.value : subjectEl.textContent) : '').trim();
+  const body = (bodyEl ? (bodyEl.value !== undefined ? bodyEl.value : bodyEl.textContent) : '').trim();
 
   if (!subject || !body) {
     showToast('Subject and Body cannot be empty.', true);
@@ -428,5 +430,257 @@ async function sendEmailSMTP(leadId) {
     showToast(err.message, true);
   } finally {
     setButtonLoading(btn, false);
+  }
+}
+
+
+// ──────────────── 5. Excel Upload, Mail History & CSV Export, OCR & LinkedIn ────────────────
+
+function updateExcelFileName(input) {
+  const label = document.getElementById('excelFileLabel');
+  const badge = document.getElementById('selectedExcelName');
+  if (input.files && input.files.length > 0) {
+    const file = input.files[0];
+    if (label) label.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    if (badge) badge.classList.remove('hidden');
+  }
+}
+
+async function handleExcelUpload(event) {
+  event.preventDefault();
+  const fileInput = document.getElementById('excelFileInput');
+  const btn = document.getElementById('uploadExcelBtn');
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    showToast('Please choose an Excel (.xlsx, .csv) file first.', true);
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  setButtonLoading(btn, true, 'Ingesting & Vectorizing Leads...');
+  try {
+    const res = await fetch('/api/leads/upload-excel', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to upload leads.');
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Leads Ingested & Synced!',
+      text: `${data.total_imported || 'Multiple'} target company leads were successfully loaded onto your dashboard and queued for ChromaDB vector embeddings.`,
+      confirmButtonColor: '#00B4A0'
+    });
+
+    const modalEl = document.getElementById('uploadExcelModal');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      modal.hide();
+    }
+    window.location.reload();
+  } catch (err) {
+    showModalAlert('Upload Error', err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function openCompanyMailHistory(leadId, companyName) {
+  const modalEl = document.getElementById('companyMailHistoryModal');
+  const compTitle = document.getElementById('mailHistoryCompanyName');
+  const exportBtn = document.getElementById('exportCompanyCsvBtn');
+  const loadingEl = document.getElementById('mailHistoryLoading');
+  const emptyEl = document.getElementById('mailHistoryEmpty');
+  const listEl = document.getElementById('mailHistoryList');
+
+  if (!modalEl) return;
+
+  if (compTitle) compTitle.textContent = `${companyName} — Outreach History`;
+  if (exportBtn) exportBtn.href = `/api/leads/${leadId}/export-emails-csv`;
+
+  if (loadingEl) loadingEl.classList.remove('hidden');
+  if (emptyEl) emptyEl.classList.add('hidden');
+  if (listEl) {
+    listEl.classList.add('hidden');
+    listEl.innerHTML = '';
+  }
+
+  const modal = new bootstrap.Modal(modalEl);
+  modal.show();
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}/emails`);
+    if (!res.ok) throw new Error('Failed to load email history.');
+    const data = await res.json();
+
+    if (loadingEl) loadingEl.classList.add('hidden');
+
+    if (!data.emails || data.emails.length === 0) {
+      if (emptyEl) emptyEl.classList.remove('hidden');
+      return;
+    }
+
+    if (listEl) {
+      listEl.classList.remove('hidden');
+      listEl.innerHTML = data.emails.map(e => `
+        <div class="p-3 bg-white rounded-3 border shadow-xs">
+          <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 pb-2 border-bottom gap-2">
+            <div>
+              <span class="badge ${e.sent_at ? 'bg-success-subtle text-success border border-success' : 'bg-primary-subtle text-primary border border-primary'} rounded-pill px-3 py-1">
+                <i class="fa-solid ${e.sent_at ? 'fa-paper-plane' : 'fa-pen-ruler'} me-1"></i> ${e.sent_at ? 'Dispatched via SMTP' : 'AI Drafted'}
+              </span>
+              <span class="text-muted small ms-2">${e.created_at || 'Recently'}</span>
+            </div>
+            <div>
+              <span class="badge bg-light text-dark border rounded-pill px-3 py-1 small">
+                <i class="fa-solid fa-shield-check text-success me-1"></i> Fact Score: ${e.evaluator_score}
+              </span>
+            </div>
+          </div>
+          <div class="fw-bold fs-6 mb-1 text-navy">${e.subject || 'No Subject'}</div>
+          <div class="p-3 bg-light rounded-3 text-secondary small mb-2" style="white-space: pre-wrap; line-height: 1.5;">${e.body || ''}</div>
+          <div class="small text-muted d-flex align-items-start gap-1">
+            <i class="fa-solid fa-circle-info text-teal mt-1"></i>
+            <span><strong>Evaluator Audit:</strong> ${e.evaluator_reasoning || 'Verified factual claims against knowledge base.'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    if (loadingEl) loadingEl.classList.add('hidden');
+    showToast(err.message, true);
+  }
+}
+
+function autofillDemoSite(name, url) {
+  const nameEl = document.getElementById('autoCompanyName');
+  const urlEl = document.getElementById('autoWebsiteUrl');
+  if (nameEl) nameEl.value = name;
+  if (urlEl) urlEl.value = url;
+  showToast(`Selected demo prospect: ${name}`);
+}
+
+function handleOcrAttachment(input) {
+  const badge = document.getElementById('ocrStatusBadge');
+  if (input.files && input.files.length > 0) {
+    const file = input.files[0];
+    if (badge) {
+      badge.className = 'badge bg-teal-subtle text-teal border border-teal small';
+      badge.innerHTML = `<i class="fa-solid fa-file me-1"></i> ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    }
+  }
+}
+
+async function triggerOcrExtraction() {
+  const fileInput = document.getElementById('ocrAttachmentFile');
+  const btn = document.getElementById('ocrExtractBtn');
+
+  if (!fileInput.files || fileInput.files.length === 0) {
+    showToast('Please choose an image, PDF, or document first.', true);
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+
+  setButtonLoading(btn, true, 'Gemini Vision Extracting...');
+  try {
+    const res = await fetch('/api/leads/ocr-extract', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'OCR extraction failed.');
+
+    // Auto-fill form fields
+    if (data.company_name && document.getElementById('manualCompanyName')) {
+      document.getElementById('manualCompanyName').value = data.company_name;
+    }
+    if (data.contact_name && document.getElementById('manualContactName')) {
+      document.getElementById('manualContactName').value = data.contact_name;
+    }
+    if (data.email && document.getElementById('manualEmail')) {
+      document.getElementById('manualEmail').value = data.email;
+    }
+    if (data.website_url && document.getElementById('manualWebsite')) {
+      document.getElementById('manualWebsite').value = data.website_url;
+    }
+    if (data.extracted_text && document.getElementById('manualRawText')) {
+      const current = document.getElementById('manualRawText').value;
+      document.getElementById('manualRawText').value = (current ? current + '\n\n' : '') + data.extracted_text;
+    }
+
+    showToast('Extracted business information with Gemini Vision OCR!');
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function analyzeLinkedInPostQuick() {
+  const urlInput = document.getElementById('manualLinkedinUrl');
+  const postUrl = urlInput ? urlInput.value.trim() : '';
+
+  if (!postUrl) {
+    showToast('Please paste a LinkedIn post URL first.', true);
+    return;
+  }
+
+  showToast('Analyzing LinkedIn post via Sales Intelligence...');
+  try {
+    const res = await fetch('/api/leads/analyze-linkedin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_url: postUrl })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'LinkedIn analysis failed.');
+
+    const rawTextEl = document.getElementById('manualRawText');
+    if (rawTextEl) {
+      const appendText = `\n[LinkedIn Intelligence - ${postUrl}]:\n${data.analysis}\n`;
+      rawTextEl.value = (rawTextEl.value + '\n' + appendText).trim();
+    }
+
+    showToast('LinkedIn post insights added to research context!');
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+
+async function analyzeWorkspaceLinkedIn(leadId) {
+  const urlInput = document.getElementById('workspaceLinkedinUrl');
+  const postUrl = urlInput ? urlInput.value.trim() : '';
+
+  if (!postUrl) {
+    showToast('Please paste a LinkedIn post URL first.', true);
+    return;
+  }
+
+  showToast('Analyzing LinkedIn post and updating vector store...');
+  try {
+    const res = await fetch('/api/leads/analyze-linkedin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_id: leadId, post_url: postUrl })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'LinkedIn analysis failed.');
+
+    const contextEl = document.getElementById('prospect-context');
+    if (contextEl) {
+      const appendText = `\n\n[LinkedIn Post Intelligence — ${postUrl}]:\n${data.analysis}\n`;
+      contextEl.value = (contextEl.value + appendText).trim();
+    }
+
+    showToast('LinkedIn post analyzed and synced to vector store!');
+    if (urlInput) urlInput.value = '';
+  } catch (err) {
+    showToast(err.message, true);
   }
 }

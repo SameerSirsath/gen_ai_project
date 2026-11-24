@@ -88,8 +88,9 @@ class ChromaVectorStore:
         # Dimension verification
         if self._collection.count() > 0:
             sample = self._collection.get(include=["embeddings"], limit=1)
-            if sample.get("embeddings") and len(sample["embeddings"]) > 0:
-                existing_dim = len(sample["embeddings"][0])
+            embeddings = sample.get("embeddings")
+            if embeddings is not None and len(embeddings) > 0:
+                existing_dim = len(embeddings[0])
                 if existing_dim != self.embedder.dimensions:
                     print(
                         f"    [CHROMA] Dimension mismatch: collection has {existing_dim}d, "

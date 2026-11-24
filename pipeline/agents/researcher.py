@@ -10,7 +10,7 @@ import re
 from typing import Any, Optional
 
 from pipeline.schemas import ResearchSignals
-from pipeline.llm.ollama_client import OllamaClient
+from app.services.llm_adapter import RouterLLMClient
 
 
 def _extract_json(raw_text: str) -> dict:
@@ -57,7 +57,7 @@ def extract_signals(
         Parsed ResearchSignals object.
     """
     if llm_client is None:
-        llm_client = OllamaClient()
+        llm_client = RouterLLMClient()
 
     schema_dict = ResearchSignals.model_json_schema()
     schema_str = json.dumps(schema_dict, indent=2)

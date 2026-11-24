@@ -10,7 +10,7 @@ import re
 from typing import Any, Optional
 
 from pipeline.schemas import ResearchSignals, WriterOutput
-from pipeline.llm.ollama_client import OllamaClient
+from app.services.llm_adapter import RouterLLMClient
 
 
 def _extract_json(raw_text: str) -> dict:
@@ -57,7 +57,7 @@ def draft_email(
         Parsed WriterOutput object.
     """
     if llm_client is None:
-        llm_client = OllamaClient()
+        llm_client = RouterLLMClient()
 
     primary_news = research.recent_news[0] if research.recent_news else "recent company developments"
     primary_pain_point = research.pain_points[0] if research.pain_points else "scaling operational efficiency"

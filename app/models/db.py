@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from app.models.encrypted_type import EncryptedText
 
@@ -86,7 +87,7 @@ class LeadContext(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     lead_id = db.Column(db.Integer, db.ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
-    raw_text = db.Column(db.Text(length=4294967295), nullable=False)  # LONGTEXT in MySQL
+    raw_text = db.Column(db.Text, nullable=False)
     nlp_processed = db.Column(db.Boolean, default=False)
     vector_synced = db.Column(db.Boolean, default=False)
     source_type = db.Column(db.String(50), default="Manual")
@@ -113,7 +114,7 @@ class EmailLog(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     lead_id = db.Column(db.Integer, db.ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
     subject = db.Column(db.String(500), default="")
-    body = db.Column(db.Text(length=4294967295), default="")  # LONGTEXT in MySQL
+    body = db.Column(db.Text, default="")
     evaluator_score = db.Column(db.String(50), default="1.0")
     evaluator_reasoning = db.Column(db.Text, default="")
     sent_at = db.Column(db.DateTime, nullable=True)

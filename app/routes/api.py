@@ -7,8 +7,9 @@ from __future__ import annotations
 import logging
 from flask import Blueprint, request, jsonify
 
-from app.models.db import db, ApiKey, Lead, LeadContext
+from app.models.db import db, ApiKey, Lead, LeadContext, CompanyProfile, Company
 from app.services.nlp_pipeline import process_and_sync_to_chroma
+from pipeline.orchestrator import run_agent_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def delete_api_key(key_id: int):
     """
     Deletes an API key by its database ID.
     """
-    key_obj = ApiKey.query.get(key_id)
+    key_obj = db.session.get(ApiKey, key_id) if hasattr(db.session, "get") else ApiKey.query.get(key_id)
     if not key_obj:
         return jsonify({"error": f"API key with ID {key_id} not found."}), 404
 
@@ -94,7 +95,7 @@ def toggle_api_key(key_id: int):
     """
     Toggles the is_active status of an API key.
     """
-    key_obj = ApiKey.query.get(key_id)
+    key_obj = db.session.get(ApiKey, key_id) if hasattr(db.session, "get") else ApiKey.query.get(key_id)
     if not key_obj:
         return jsonify({"error": f"API key with ID {key_id} not found."}), 404
 
@@ -171,3 +172,69 @@ def process_lead_context(lead_id: int):
             "error": str(e),
             "context_id": context.id,
         }), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. DIRECT OUTREACH GENERATION (FOR FRONTEND CLIENT SCRIPT)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_bp.route("/generate", methods=["POST"])
+def generate_outreach():
+    """
+    Direct generation endpoint called by frontend scripts.
+    Accepts prospect_name and context, executes run_agent_pipeline,
+    and returns a structured JSON payload compatible with script.js.
+    """
+    data = request.get_json(silent=True) or {}
+    prospect_name = data.get("prospect_name", "").strip()
+    context = data.get("context", "").strip()
+
+    if not prospect_name or not context:
+        return jsonify({"error": "Both 'prospect_name' and 'context' are required."}), 400
+
+    try:
+        # Retrieve company profile context
+        profile = CompanyProfile.query.first() or Company.query.first()
+        if profile:
+            company_context = (
+                f"{profile.name}: {getattr(profile, 'value_proposition', '')}\n"
+                f"Services: {getattr(profile, 'services_offered', '')}"
+            )
+        else:
+            company_context = "AI SDR Solutions: Autonomous personalized outreach and multi-agent RAG."
+
+        result = run_agent_pipeline(
+            prospect_name=prospect_name,
+            context=context,
+            company_context=company_context,
+        )
+
+        draft = result.get("draft") or {}
+        evaluation = result.get("evaluation") or {}
+        is_grounded = bool(result.get("approved"))
+        status_label = "PASSED" if is_grounded else "BLOCKED"
+
+        claims_used = evaluation.get("supported_claims") or draft.get("claims_used") or []
+        flagged_claims = evaluation.get("unsupported_claims") or result.get("flagged_claims") or []
+        reasoning = evaluation.get("reasoning") or result.get("reasoning") or "Evaluator verified claims against knowledge base."
+
+        return jsonify({
+            "status": status_label,
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "reasoning": reasoning,
+            "claims_used": claims_used,
+            "is_grounded": is_grounded,
+            "flagged_claims": flagged_claims,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error during outreach generation: {e}", exc_info=True)
+        return jsonify({
+            "status": "BLOCKED",
+            "error": str(e),
+            "reasoning": f"Generation failed: {str(e)}",
+            "is_grounded": False,
+            "flagged_claims": [str(e)],
+        }), 500
+

@@ -26,80 +26,114 @@
     <span id="leadStatusBadge" class="status-badge {{ lead.status.lower() }}">
       <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i> {{ lead.status }}
     </span>
+    <span id="status-badge" class="badge badge-idle">Idle</span>
   </div>
 </div>
 
-<!-- ──────────────── TOP PANEL: Lead Context & NLP Analysis ──────────────── -->
-<div class="row g-4 mb-4" data-aos="fade-up">
-  <div class="col-12">
-    <div class="saas-card">
-      <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
-        <div class="d-flex align-items-center gap-3">
-          <div class="kpi-icon-circle" style="width: 44px; height: 44px; font-size: 1.1rem;">
-            <i class="fa-solid fa-layer-group"></i>
+<form id="outreach-form">
+  <!-- ──────────────── TOP PANEL: Lead Context & NLP Analysis ──────────────── -->
+  <div class="row g-4 mb-4" data-aos="fade-up">
+    <div class="col-12">
+      <div class="saas-card">
+        <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
+          <div class="d-flex align-items-center gap-3">
+            <div class="kpi-icon-circle" style="width: 44px; height: 44px; font-size: 1.1rem;">
+              <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div>
+              <h3 class="font-heading fs-4 fw-bold mb-0">Lead Context & NLP Analysis</h3>
+              <p class="text-muted small mb-0">Raw research text, extracted spaCy entities, and KeyBERT keywords.</p>
+            </div>
           </div>
-          <div>
-            <h3 class="font-heading fs-4 fw-bold mb-0">Lead Context & NLP Analysis</h3>
-            <p class="text-muted small mb-0">Raw research text, extracted spaCy entities, and KeyBERT keywords.</p>
-          </div>
-        </div>
-        <button id="syncVectorBtn" class="btn btn-teal btn-pill px-4" onclick="syncLeadContextToChroma({{ lead.id }})">
-          <i class="fa-solid fa-arrows-rotate me-1"></i> Sync to Vector DB
-        </button>
-      </div>
-
-      <div class="row g-3">
-        <!-- Raw Text Input Area -->
-        <div class="col-lg-8">
-          <label class="form-label fw-semibold small text-dark">Prospect Intelligence / Scraped Text</label>
-          <textarea id="workspaceRawText" class="form-control rounded-3" rows="5" placeholder="Paste company overview, news, pain points, or scraped web data...">{% if contexts %}{{ contexts[0].raw_text }}{% endif %}</textarea>
-          <div class="text-muted small mt-1">
-            <span>Cleaned via BeautifulSoup & tokenized via LangChain.</span>
-          </div>
+          <button type="button" id="syncVectorBtn" class="btn btn-teal btn-pill px-4" onclick="syncLeadContextToChroma({{ lead.id }})">
+            <i class="fa-solid fa-arrows-rotate me-1"></i> Sync to Vector DB
+          </button>
         </div>
 
-        <!-- Extracted Keywords & Entities Side Badge Box -->
-        <div class="col-lg-4">
-          <label class="form-label fw-semibold small text-dark">NLP Extracted Features</label>
-          <div class="p-3 bg-light rounded-3 border h-100" style="min-height: 120px;">
-            <div class="small fw-semibold text-muted mb-2">Key Topics & Entities:</div>
-            <div id="extractedKeywordsContainer" class="d-flex flex-wrap gap-1">
-              {% if contexts and contexts[0].keywords %}
-                {% for kw in contexts[0].to_dict().get('keywords', []) %}
-                  <span class="badge bg-white text-dark border p-2">
-                    <i class="fa-solid fa-tag text-teal me-1" style="color: #00B4A0;"></i>{{ kw }}
-                  </span>
-                {% endfor %}
-              {% else %}
-                <span class="text-muted small">Click "Sync to Vector DB" to extract keywords & entities.</span>
-              {% endif %}
+        <div class="row g-3">
+          <!-- LinkedIn Intelligence Integration -->
+          <div class="col-12 mt-2">
+            <label class="form-label fw-semibold small text-dark"><i class="fa-brands fa-linkedin text-primary me-1"></i> Analyze LinkedIn Posts for {{ lead.company_name }}</label>
+            <div class="input-group">
+              <input type="url" id="workspaceLinkedinUrl" class="form-control rounded-3" placeholder="Paste LinkedIn post link (e.g. https://www.linkedin.com/posts/...)">
+              <button type="button" class="btn btn-outline-teal rounded-3 px-3" onclick="analyzeWorkspaceLinkedIn({{ lead.id }})">
+                <i class="fa-solid fa-chart-line me-1"></i> Analyze & Ingest into Vector DB
+              </button>
+            </div>
+            <div class="form-text small">Extracts company announcements and stores them directly into this company's ChromaDB vector partition.</div>
+          </div>
+
+          <!-- Raw Text / Prospect Context Input Area -->
+          <div class="col-lg-8">
+            <label class="form-label fw-semibold small text-dark">Prospect Intelligence / Scraped Text</label>
+            <textarea id="prospect-context" name="prospect-context" class="form-control rounded-3" rows="5" placeholder="Paste company overview, news, pain points, or scraped web data...">{% if contexts %}{{ contexts[0].raw_text }}{% endif %}</textarea>
+            <div class="text-muted small mt-1">
+              <span>Cleaned via BeautifulSoup & tokenized via LangChain.</span>
+            </div>
+          </div>
+
+          <!-- Extracted Keywords & Entities Side Badge Box -->
+          <div class="col-lg-4">
+            <label class="form-label fw-semibold small text-dark">NLP Extracted Features</label>
+            <div class="p-3 bg-light rounded-3 border h-100" style="min-height: 120px;">
+              <div class="small fw-semibold text-muted mb-2">Key Topics & Entities:</div>
+              <div id="extractedKeywordsContainer" class="d-flex flex-wrap gap-1">
+                {% if contexts and contexts[0].keywords %}
+                  {% for kw in contexts[0].to_dict().get('keywords', []) %}
+                    <span class="badge bg-white text-dark border p-2">
+                      <i class="fa-solid fa-tag text-teal me-1" style="color: #00B4A0;"></i>{{ kw }}
+                    </span>
+                  {% endfor %}
+                {% else %}
+                  <span class="text-muted small">Click "Sync to Vector DB" to extract keywords & entities.</span>
+                {% endif %}
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- ──────────────── MIDDLE PANEL: The Magic (Generate Email Button) ──────────────── -->
-<div class="row mb-4 text-center" data-aos="zoom-in">
-  <div class="col-12">
-    <div class="p-4 bg-white rounded-4 shadow-sm border d-flex flex-column align-items-center justify-content-center">
-      <div class="mb-3 text-muted small">
-        <i class="fa-solid fa-wand-magic-sparkles text-teal me-1" style="color: #00B4A0;"></i>
-        Invokes <strong>AI Writer</strong> (LLaMA 3.3 70B / Gemini) + <strong>AI Evaluator</strong> (Hallucination Guard)
+  <!-- ──────────────── MIDDLE PANEL: The Magic (Generate Email Button) ──────────────── -->
+  <div class="row mb-4 text-center" data-aos="zoom-in">
+    <div class="col-12">
+      <div class="p-4 bg-white rounded-4 shadow-sm border d-flex flex-column align-items-center justify-content-center">
+        <div class="mb-3 text-muted small">
+          <i class="fa-solid fa-wand-magic-sparkles text-teal me-1" style="color: #00B4A0;"></i>
+          Invokes <strong>AI Writer</strong> (LLaMA 3.3 70B / Gemini) + <strong>AI Evaluator</strong> (Hallucination Guard)
+        </div>
+        <button type="submit" id="generate-btn" class="btn-generate-magic">
+          <i class="fa-solid fa-bolt me-2"></i>
+          <span class="btn-text">Generate Outreach</span>
+        </button>
       </div>
-      <button id="generateEmailBtn" class="btn-generate-magic" onclick="generateAIEmail({{ lead.id }})">
-        <i class="fa-solid fa-bolt me-2"></i> Generate Hyper-Personalized Email
-      </button>
     </div>
   </div>
-</div>
+</form>
 
 <!-- ──────────────── BOTTOM PANEL: Output & Verification ──────────────── -->
 <div class="row g-4" data-aos="fade-up">
   <div class="col-12">
-    <div class="saas-card">
+    <!-- Empty State -->
+    <div id="empty-state" class="{% if emails %}hidden{% endif %} text-center py-4 bg-white rounded-4 border p-4 mb-3">
+      <i class="fa-regular fa-paper-plane fa-2x text-muted mb-2"></i>
+      <p class="text-muted mb-0">No draft generated yet. Click "Generate Outreach" to trigger the multi-agent RAG pipeline.</p>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading-spinner" class="hidden text-center py-5 bg-white rounded-4 border p-4 mb-3">
+      <div class="brain-pulse d-inline-block text-teal fs-1 mb-3" style="color: #00B4A0;">
+        <i class="fa-solid fa-brain fa-3x"></i>
+      </div>
+      <h4 class="font-heading fs-4 fw-bold text-navy" style="color: #1B264F;">AI Multi-Agent Pipeline Thinking...</h4>
+      <p class="text-muted small max-w-500 mx-auto">
+        Querying ChromaDB vector store, drafting context-aware hook with Groq/Gemini, and running hallucination cross-checks...
+      </p>
+    </div>
+
+    <!-- Results Container -->
+    <div id="results-container" class="saas-card {% if not emails %}hidden{% endif %}">
       <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
         <div class="d-flex align-items-center gap-3">
           <div class="kpi-icon-circle" style="width: 44px; height: 44px; font-size: 1.1rem;">
@@ -111,7 +145,8 @@
           </div>
         </div>
 
-        <div id="evaluatorBadgeContainer">
+        <div id="evaluatorBadgeContainer" class="d-flex align-items-center gap-2">
+          <span id="audit-verdict" class="badge bg-light text-dark border">Grounding Audit</span>
           {% if emails %}
             {% set latest_email = emails[0] %}
             {% if latest_email.evaluator_score|float >= 0.7 %}
@@ -131,50 +166,120 @@
         </div>
       </div>
 
-      <!-- Pulsing Brain Loading Placeholder (hidden by default) -->
-      <div id="outputPlaceholder" class="text-center py-5 d-none">
-        <div class="brain-pulse d-inline-block text-teal fs-1 mb-3" style="color: #00B4A0;">
-          <i class="fa-solid fa-brain fa-3x"></i>
+      <!-- Alert Banner for Evaluator Warnings / Blocked States -->
+      <div id="alert-banner" class="alert alert-danger hidden d-flex align-items-center gap-2" role="alert">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div>
+          <strong>Evaluation Alert:</strong>
+          <span id="alert-reasoning">Ungrounded or unsupported claims detected in the email draft.</span>
         </div>
-        <h4 class="font-heading fs-4 fw-bold text-navy" style="color: #1B264F;">AI Multi-Agent Pipeline Thinking...</h4>
-        <p class="text-muted small max-w-500 mx-auto">
-          Querying ChromaDB vector store, drafting context-aware hook with Groq/Gemini, and running hallucination cross-checks...
-        </p>
       </div>
 
-      <!-- Content Form -->
-      <div id="outputContent" class="{% if not emails %}d-none{% endif %}">
-        <!-- Evaluator Reasoning Alert -->
-        <div class="p-3 bg-light rounded-3 border mb-3 small d-flex align-items-start gap-2">
-          <i class="fa-solid fa-circle-info text-teal mt-1" style="color: #00B4A0;"></i>
-          <div>
-            <strong>Evaluator Analysis:</strong>
-            <span id="evaluatorReasoning">
-              {% if emails %}{{ emails[0].evaluator_reasoning or 'Verified all facts against company value proposition.' }}{% else %}Ready for generation.{% endif %}
-            </span>
-          </div>
-        </div>
+      <!-- Flagged Claims Section -->
+      <div id="flagged-section" class="p-3 bg-light border border-danger-subtle rounded-3 mb-3 hidden">
+        <strong class="text-danger small d-block mb-1"><i class="fa-solid fa-ban me-1"></i> Flagged Claims:</strong>
+        <ul id="flagged-list" class="mb-0 ps-3 small text-danger"></ul>
+      </div>
 
-        <div class="mb-3">
-          <label class="form-label fw-semibold small text-dark">Subject Line</label>
-          <input type="text" id="emailSubject" class="form-control rounded-3 fw-semibold" value="{% if emails %}{{ emails[0].subject }}{% endif %}" placeholder="Personalized Subject...">
-        </div>
-
-        <div class="mb-4">
-          <label class="form-label fw-semibold small text-dark">Email Body</label>
-          <textarea id="emailBody" class="form-control rounded-3" rows="8" placeholder="Generated email body...">{% if emails %}{{ emails[0].body }}{% endif %}</textarea>
-        </div>
-
-        <div class="d-flex flex-wrap align-items-center justify-content-between pt-3 border-top gap-2">
-          <span class="text-muted small">
-            Recipient: <strong>{{ lead.email or 'No email on file' }}</strong>
+      <!-- Evaluator Reasoning Alert -->
+      <div class="p-3 bg-light rounded-3 border mb-3 small d-flex align-items-start gap-2">
+        <i class="fa-solid fa-circle-info text-teal mt-1" style="color: #00B4A0;"></i>
+        <div>
+          <strong>Evaluator Analysis:</strong>
+          <span id="output-reasoning">
+            {% if emails %}{{ emails[0].evaluator_reasoning or 'Verified all facts against company value proposition.' }}{% else %}Ready for generation.{% endif %}
           </span>
-          <button id="sendEmailBtn" class="btn btn-teal btn-pill px-4 py-2" onclick="sendEmailSMTP({{ lead.id }})" {% if not emails or emails[0].evaluator_score|float < 0.7 %}disabled{% endif %}>
-            <i class="fa-solid fa-paper-plane me-1"></i> Send Email via SMTP
-          </button>
         </div>
+      </div>
+
+      <!-- Claims Used Container -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold small text-dark">Verified Claims Utilized</label>
+        <div id="claims-used-container" class="d-flex flex-wrap gap-2 p-2 bg-light rounded-3 border">
+          <span class="claim-tag">Awaiting pipeline run</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <label class="form-label fw-semibold small text-dark mb-1">Subject Line</label>
+        </div>
+        <div id="output-subject" class="form-control rounded-3 fw-semibold bg-white p-2 border" style="min-height: 42px;">{% if emails %}{{ emails[0].subject }}{% endif %}</div>
+      </div>
+
+      <div class="mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label fw-semibold small text-dark mb-0">Email Body</label>
+          <span id="word-count" class="badge bg-light text-muted border">0 words</span>
+        </div>
+        <div id="output-body" class="form-control rounded-3 bg-white p-3 border" style="min-height: 180px; white-space: pre-wrap;">{% if emails %}{{ emails[0].body }}{% endif %}</div>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center justify-content-between pt-3 border-top gap-2">
+        <span class="text-muted small">
+          Recipient: <strong>{{ lead.email or 'No email on file' }}</strong>
+        </span>
+        <button id="sendEmailBtn" class="btn btn-teal btn-pill px-4 py-2" onclick="sendEmailSMTP({{ lead.id }})">
+          <i class="fa-solid fa-paper-plane me-1"></i> Send Email via SMTP
+        </button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- ──────────────── COMPANY-WISE MAIL HISTORY & CSV EXPORT ──────────────── -->
+<div class="row g-4 mt-1" data-aos="fade-up">
+  <div class="col-12">
+    <div class="saas-card">
+      <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
+        <div class="d-flex align-items-center gap-3">
+          <div class="kpi-icon-circle" style="width: 44px; height: 44px;">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+          </div>
+          <div>
+            <h3 class="font-heading fs-4 fw-bold mb-0">Company Mail History ({{ emails|length }})</h3>
+            <p class="text-muted small mb-0">Full record of multi-agent outreach generated and sent for {{ lead.company_name }}.</p>
+          </div>
+        </div>
+        <a href="{{ url_for('leads_api.export_lead_emails_csv', lead_id=lead.id) }}" class="btn btn-outline-teal btn-pill px-3 py-2">
+          <i class="fa-solid fa-file-csv text-success me-1"></i> Export {{ lead.company_name }} History (CSV)
+        </a>
+      </div>
+
+      {% if emails %}
+        <div class="d-flex flex-column gap-3">
+          {% for em in emails %}
+            <div class="p-3 bg-light rounded-3 border">
+              <div class="d-flex flex-wrap align-items-center justify-content-between mb-2 pb-2 border-bottom gap-2">
+                <div>
+                  <span class="badge {{ 'bg-success-subtle text-success border border-success' if em.sent_at else 'bg-primary-subtle text-primary border' }} rounded-pill px-3 py-1">
+                    <i class="fa-solid {{ 'fa-paper-plane' if em.sent_at else 'fa-pen-ruler' }} me-1"></i> {{ 'Dispatched via SMTP' if em.sent_at else 'AI Draft' }}
+                  </span>
+                  <span class="text-muted small ms-2">{{ em.created_at.strftime('%b %d, %Y %H:%M') if em.created_at else '' }}</span>
+                </div>
+                <span class="badge bg-white text-dark border rounded-pill px-3 py-1 small">
+                  <i class="fa-solid fa-shield-check text-success me-1"></i> Grounding Score: {{ em.evaluator_score }}
+                </span>
+              </div>
+              <div class="fw-bold text-navy mb-1">{{ em.subject }}</div>
+              <div class="p-3 bg-white rounded-3 small text-secondary mb-2" style="white-space: pre-wrap;">{{ em.body }}</div>
+              <div class="small text-muted">
+                <i class="fa-solid fa-circle-info text-teal me-1"></i> <strong>Audit Verdict:</strong> {{ em.evaluator_reasoning or 'Grounded against company knowledge base.' }}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="fa-regular fa-envelope-open fa-2x mb-2 d-block text-secondary"></i>
+          No email communication history logged yet for {{ lead.company_name }}. Generate a draft above to begin.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='script.js') }}"></script>
 {% endblock %}

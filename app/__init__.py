@@ -31,7 +31,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "ai-sdr-secret-key-123")
-    app.config["ENCRYPTION_KEY"] = os.getenv("ENCRYPTION_KEY")
 
     if test_config:
         app.config.update(test_config)
@@ -66,7 +65,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception as e:
             # Fallback to local SQLite if MySQL isn't reachable
             if "mysql" in str(app.config["SQLALCHEMY_DATABASE_URI"]).lower():
-                print(f"[Database] MySQL connection warning ({e}). Falling back to local SQLite.")
+                print("WARNING: Falling back to SQLite. MySQL is not connected.")
                 sqlite_path = Path(__file__).resolve().parent.parent / "ai_sdr.db"
                 app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{sqlite_path}"
                 db.init_app(app)

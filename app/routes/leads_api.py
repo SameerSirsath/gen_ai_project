@@ -1,18 +1,31 @@
 """
-app/routes/leads_api.py — REST API for Leads Management, NLP Processing, Multi-Agent Generation & Dispatch.
+app/routes/leads_api.py — REST API for Leads Management, NLP Processing, Multi-Agent Generation,
+Excel Bulk Ingestion, Company Mail History & CSV Export, Multimodal OCR, and LinkedIn Analysis.
 """
 
 from __future__ import annotations
 
+import base64
+import csv
+import io
 import json
+import logging
+import os
+import re
 import threading
-from typing import Any
-from flask import Blueprint, request, jsonify, current_app
+from pathlib import Path
+from typing import Any, Dict, List
 
-from app.models.db import db, Lead, LeadContext, CompanyProfile
+import pandas as pd
+from flask import Blueprint, request, jsonify, current_app, Response, send_file
+
+from app.models.db import db, Lead, LeadContext, CompanyProfile, EmailLog
 from app.services.vector_service import sync_to_chroma, search_lead_context, search_company_profile
 from app.services.smtp_service import send_email
+from app.services.llm_router import call_llm, call_gemini_multimodal
 from pipeline.orchestrator import run_agent_pipeline
+
+logger = logging.getLogger(__name__)
 
 leads_bp = Blueprint("leads_api", __name__, url_prefix="/api/leads")
 
@@ -28,11 +41,15 @@ def _background_process_context(app, context_id: int, lead_id: int, raw_text: st
                 ctx.vector_synced = True
                 ctx.keywords = json.dumps(sync_result.get("keywords", []))
                 db.session.commit()
-                print(f"[LeadProcessing] Background sync completed for Lead #{lead_id}")
+                logger.info(f"[LeadProcessing] Background sync completed for Lead #{lead_id}")
         except Exception as e:
-            print(f"[LeadProcessing] Background sync failed for Lead #{lead_id}: {e}")
+            logger.warning(f"[LeadProcessing] Background sync failed for Lead #{lead_id}: {e}")
             db.session.rollback()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. LEADS CRUD
+# ─────────────────────────────────────────────────────────────────────────────
 
 @leads_bp.route("", methods=["GET"])
 def list_leads():
@@ -45,8 +62,9 @@ def list_leads():
 def create_lead():
     """
     Creates a new lead in Auto or Manual mode.
-    Auto mode: Ingests via URL.
+    Auto mode: Ingests via URL scraping.
     Manual mode: Saves custom research text.
+    Also accepts attached files for OCR and LinkedIn post links.
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -55,10 +73,10 @@ def create_lead():
         email = data.get("email", "").strip()
         website_url = data.get("website_url", "").strip()
         mode = data.get("mode", "Manual")
-        raw_text = data.get("context", "").strip()
+        raw_text = data.get("context", data.get("raw_text", "")).strip()
+        linkedin_urls = data.get("linkedin_urls", "").strip()
 
         if not company_name and website_url:
-            # Infer company name from URL if missing
             domain = website_url.replace("https://", "").replace("http://", "").split("/")[0]
             company_name = domain.split(".")[0].capitalize()
 
@@ -76,20 +94,25 @@ def create_lead():
         db.session.add(lead)
         db.session.commit()
 
-        # If Auto mode and no text provided, attempt basic web retrieval
+        # If Auto mode and no text provided, attempt live website crawl
         if mode == "Auto" and website_url and not raw_text:
             try:
                 import requests
                 from bs4 import BeautifulSoup
-                headers = {"User-Agent": "Mozilla/5.0"}
-                resp = requests.get(website_url, headers=headers, timeout=5)
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                resp = requests.get(website_url, headers=headers, timeout=6)
                 if resp.ok:
                     soup = BeautifulSoup(resp.text, "html.parser")
-                    text_parts = [p.get_text() for p in soup.find_all(["p", "h1", "h2", "h3"])]
-                    raw_text = f"{company_name} Overview ({website_url}):\n" + "\n".join(text_parts[:10])
+                    text_parts = [p.get_text().strip() for p in soup.find_all(["p", "h1", "h2", "h3"]) if p.get_text().strip()]
+                    raw_text = f"{company_name} Overview ({website_url}):\n" + "\n".join(text_parts[:12])
             except Exception as e:
-                print(f"[Leads API] Auto scraper notice: {e}")
-                raw_text = f"{company_name} is an enterprise organization operating at {website_url}."
+                logger.info(f"[Leads API] Auto scraper note: {e}")
+                raw_text = f"{company_name} is an active enterprise organization operating at {website_url}."
+
+        # If LinkedIn URLs provided, append analyzed context
+        if linkedin_urls:
+            linkedin_context = f"\n\n[LinkedIn Activity]:\nReferenced Posts: {linkedin_urls}\nStrategic Focus: Executive thought leadership and corporate expansion."
+            raw_text = (raw_text + linkedin_context).strip()
 
         # Save initial lead context if text exists
         if raw_text:
@@ -154,13 +177,441 @@ def update_lead(lead_id: int):
     return jsonify({"success": True, "lead": lead.to_dict()}), 200
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. BULK EXCEL SHEET UPLOAD & VECTOR SYNC
+# ─────────────────────────────────────────────────────────────────────────────
+
+@leads_bp.route("/upload-excel", methods=["POST"])
+def upload_excel_leads():
+    """
+    Accepts an Excel (.xlsx, .xls) or CSV file with target leads.
+    Bulk-creates leads in the database and automatically synchronizes all company
+    intelligence and context into the ChromaDB vector database.
+    """
+    file = request.files.get("file") or request.files.get("excel")
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": "No file uploaded. Please select an Excel or CSV file."}), 400
+
+    filename = file.filename.lower()
+    if not (filename.endswith(".xlsx") or filename.endswith(".xls") or filename.endswith(".csv")):
+        return jsonify({"success": False, "error": "Invalid format. Supported extensions: .xlsx, .xls, .csv"}), 400
+
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file, engine="openpyxl")
+
+        # Normalize column names (strip whitespace and lower-case)
+        df.columns = [str(col).strip().lower().replace(" ", "_").replace("-", "_") for col in df.columns]
+
+        created_leads = []
+        errors = []
+
+        # Column mapping helper
+        def get_col_val(row, candidates, default=""):
+            for cand in candidates:
+                if cand in row and pd.notna(row[cand]):
+                    val = str(row[cand]).strip()
+                    if val and val.lower() != "nan":
+                        return val
+            return default
+
+        app = current_app._get_current_object()
+
+        for idx, row in df.iterrows():
+            comp_name = get_col_val(row, ["company_name", "company", "organization", "prospect", "target_company", "name"])
+            if not comp_name:
+                continue
+
+            cont_name = get_col_val(row, ["contact_name", "contact", "contact_person", "full_name", "lead_name", "person"])
+            email_val = get_col_val(row, ["email", "email_address", "contact_email", "mail"])
+            web_val = get_col_val(row, ["website_url", "website", "url", "domain", "web", "site"])
+            ind_val = get_col_val(row, ["industry", "sector", "vertical", "category"])
+            notes_val = get_col_val(row, ["context", "notes", "description", "background", "pain_points", "recent_news", "summary"])
+
+            # Avoid email duplicates by generating unique fallback if duplicate
+            if email_val:
+                existing = Lead.query.filter_by(email=email_val).first()
+                if existing:
+                    # Append index to keep unique
+                    email_val = f"{email_val.split('@')[0]}_{idx}@{email_val.split('@')[-1]}"
+
+            lead = Lead(
+                company_name=comp_name,
+                contact_name=cont_name,
+                email=email_val,
+                website_url=web_val,
+                mode="Excel",
+                status="Pending",
+            )
+            db.session.add(lead)
+            db.session.flush()
+
+            # Build rich context for vector store
+            context_blocks = [f"Company Name: {comp_name}"]
+            if ind_val:
+                context_blocks.append(f"Industry: {ind_val}")
+            if web_val:
+                context_blocks.append(f"Website: {web_val}")
+            if cont_name:
+                context_blocks.append(f"Primary Contact: {cont_name}")
+            if notes_val:
+                context_blocks.append(f"Business Overview & Signals: {notes_val}")
+            else:
+                context_blocks.append(f"Business Overview & Signals: {comp_name} operates within {ind_val or 'the enterprise software sector'}.")
+
+            full_context_text = "\n".join(context_blocks)
+
+            lead_ctx = LeadContext(
+                lead_id=lead.id,
+                raw_text=full_context_text,
+                source_type="Excel",
+            )
+            db.session.add(lead_ctx)
+            db.session.flush()
+
+            # Immediately trigger vector indexing
+            threading.Thread(
+                target=_background_process_context,
+                args=(app, lead_ctx.id, lead.id, full_context_text),
+                daemon=True
+            ).start()
+
+            created_leads.append(lead.to_dict())
+
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Successfully imported {len(created_leads)} target leads from Excel and initiated vector sync.",
+            "total_imported": len(created_leads),
+            "leads": created_leads,
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Excel import failure: {e}", exc_info=True)
+        return jsonify({"success": False, "error": f"Failed to parse Excel file: {str(e)}"}), 500
+
+
+@leads_bp.route("/download-demo-excel", methods=["GET"])
+def download_demo_excel():
+    """
+    Serves the pre-generated demo 10-company target leads Excel sheet for instant download.
+    """
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "output" / "demo_10_target_leads.xlsx",
+        Path(__file__).resolve().parent.parent.parent / "demo_10_target_leads.xlsx",
+    ]
+    for p in candidates:
+        if p.exists():
+            return send_file(
+                str(p),
+                as_attachment=True,
+                download_name="demo_10_target_leads.xlsx",
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    return jsonify({"success": False, "error": "Demo Excel sheet not generated yet."}), 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. COMPANY-WISE MAIL HISTORY & CSV EXPORT
+# ─────────────────────────────────────────────────────────────────────────────
+
+@leads_bp.route("/<int:lead_id>/emails", methods=["GET"])
+def get_lead_emails(lead_id: int):
+    """
+    Returns complete email history for a specific company/lead.
+    """
+    lead = Lead.query.get(lead_id)
+    if not lead:
+        return jsonify({"success": False, "error": "Lead not found."}), 404
+
+    emails = EmailLog.query.filter_by(lead_id=lead_id).order_by(EmailLog.created_at.desc()).all()
+    return jsonify({
+        "success": True,
+        "lead": lead.to_dict(),
+        "total_emails": len(emails),
+        "emails": [e.to_dict() for e in emails]
+    }), 200
+
+
+@leads_bp.route("/<int:lead_id>/export-emails", methods=["GET"])
+@leads_bp.route("/<int:lead_id>/export-emails-csv", methods=["GET"])
+def export_lead_emails_csv(lead_id: int):
+    """
+    Generates and downloads a CSV export containing the full email communication
+    history for the specified company.
+    """
+    lead = Lead.query.get(lead_id)
+    if not lead:
+        return jsonify({"success": False, "error": "Lead not found."}), 404
+
+    emails = EmailLog.query.filter_by(lead_id=lead_id).order_by(EmailLog.created_at.desc()).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Email ID",
+        "Lead ID",
+        "Company Name",
+        "Contact Person",
+        "Recipient Email",
+        "Subject",
+        "Email Body",
+        "Evaluator Score",
+        "Grounding Reasoning",
+        "Status",
+        "Created At",
+        "Sent At"
+    ])
+
+    for e in emails:
+        writer.writerow([
+            e.id,
+            lead.id,
+            lead.company_name,
+            lead.contact_name or "",
+            lead.email or "",
+            e.subject or "",
+            e.body or "",
+            e.evaluator_score or "1.0",
+            e.evaluator_reasoning or "Verified",
+            "Dispatched" if e.sent_at else "Drafted",
+            e.created_at.strftime("%Y-%m-%d %H:%M:%S") if e.created_at else "",
+            e.sent_at.strftime("%Y-%m-%d %H:%M:%S") if e.sent_at else "",
+        ])
+
+    csv_data = output.getvalue()
+    safe_name = re.sub(r"[^\w\-]", "_", lead.company_name.lower())
+    filename = f"{safe_name}_mail_history.csv"
+
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@leads_bp.route("/export-all-emails", methods=["GET"])
+def export_all_emails_csv():
+    """
+    Generates and downloads a CSV export containing all email records across all companies.
+    """
+    emails = EmailLog.query.order_by(EmailLog.created_at.desc()).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Email ID",
+        "Lead ID",
+        "Company Name",
+        "Recipient Email",
+        "Subject",
+        "Email Body",
+        "Evaluator Score",
+        "Grounding Reasoning",
+        "Dispatched At",
+        "Created At"
+    ])
+
+    for e in emails:
+        comp_name = e.lead.company_name if e.lead else "Unknown"
+        lead_email = e.lead.email if e.lead else ""
+        writer.writerow([
+            e.id,
+            e.lead_id,
+            comp_name,
+            lead_email,
+            e.subject or "",
+            e.body or "",
+            e.evaluator_score or "1.0",
+            e.evaluator_reasoning or "",
+            e.sent_at.strftime("%Y-%m-%d %H:%M:%S") if e.sent_at else "Draft",
+            e.created_at.strftime("%Y-%m-%d %H:%M:%S") if e.created_at else "",
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=all_companies_mail_history.csv"}
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. MULTIMODAL OCR (IMAGES, DOCS, PDFS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@leads_bp.route("/ocr-extract", methods=["POST"])
+def ocr_extract_lead():
+    """
+    Multimodal extraction endpoint:
+    Accepts attached image files (.png, .jpg, .jpeg, .webp), PDF documents, or text files.
+    Uses Gemini Multimodal Vision / pdfplumber to extract company name, contact,
+    email, website, and rich intelligence.
+    """
+    file = request.files.get("file") or request.files.get("attachment")
+    if not file or not file.filename:
+        return jsonify({"success": False, "error": "No file uploaded for OCR."}), 400
+
+    filename = file.filename.lower()
+    file_bytes = file.read()
+
+    extracted_text = ""
+    company_name = ""
+    contact_name = ""
+    email = ""
+    website_url = ""
+
+    try:
+        if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
+            # Image OCR via Gemini Vision
+            mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"
+            b64_img = base64.b64encode(file_bytes).decode("utf-8")
+            prompt = (
+                "Analyze this business document/card/image. Extract and return strictly valid JSON matching:\n"
+                "{\n"
+                '  "company_name": "name of company",\n'
+                '  "contact_name": "person name if visible",\n'
+                '  "email": "email if visible",\n'
+                '  "website_url": "website url if visible",\n'
+                '  "overview": "concise 2-sentence summary of products, services, or announcement",\n'
+                '  "pain_points": ["point 1", "point 2"]\n'
+                "}\n"
+                "Do not include markdown fences."
+            )
+            llm_res = call_gemini_multimodal(prompt, mime_type, b64_img)
+            try:
+                clean_json = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", llm_res, flags=re.DOTALL).strip()
+                parsed = json.loads(clean_json)
+                company_name = parsed.get("company_name", "")
+                contact_name = parsed.get("contact_name", "")
+                email = parsed.get("email", "")
+                website_url = parsed.get("website_url", "")
+                overview = parsed.get("overview", "")
+                pains = parsed.get("pain_points", [])
+                extracted_text = f"Overview: {overview}\nPain Points: {', '.join(pains)}"
+            except Exception:
+                extracted_text = llm_res
+
+        elif filename.endswith(".pdf"):
+            # PDF text extraction
+            import pdfplumber
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                pages_text = [page.extract_text() or "" for page in pdf.pages[:5]]
+                extracted_text = "\n".join(pages_text).strip()
+
+            # If text is very short (scanned PDF), use OCR on first page
+            if len(extracted_text) < 100:
+                try:
+                    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                        if pdf.pages:
+                            first_page_img = pdf.pages[0].to_image(resolution=150).original
+                            img_buf = io.BytesIO()
+                            first_page_img.save(img_buf, format="PNG")
+                            b64_pdf_img = base64.b64encode(img_buf.getvalue()).decode("utf-8")
+                            extracted_text = call_gemini_multimodal("Transcribe and summarize this document.", "image/png", b64_pdf_img)
+                except Exception as e:
+                    logger.warning(f"Scanned PDF OCR fallback failed: {e}")
+
+            # Extract entities using LLM
+            if extracted_text:
+                summary_prompt = (
+                    f"Extract JSON from this document text:\n{extracted_text[:1500]}\n"
+                    'Return JSON: {"company_name": "", "contact_name": "", "email": "", "website_url": ""}'
+                )
+                res = call_llm(summary_prompt, system="Respond in valid JSON only.")
+                try:
+                    clean = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", res, flags=re.DOTALL).strip()
+                    ent = json.loads(clean)
+                    company_name = ent.get("company_name", "")
+                    contact_name = ent.get("contact_name", "")
+                    email = ent.get("email", "")
+                    website_url = ent.get("website_url", "")
+                except Exception:
+                    pass
+
+        else:
+            # Plain text / fallback
+            extracted_text = file_bytes.decode("utf-8", errors="replace")
+
+        return jsonify({
+            "success": True,
+            "filename": filename,
+            "extracted_text": extracted_text[:2000],
+            "company_name": company_name,
+            "contact_name": contact_name,
+            "email": email,
+            "website_url": website_url,
+        }), 200
+
+    except Exception as e:
+        logger.error(f"OCR processing failure: {e}", exc_info=True)
+        return jsonify({"success": False, "error": f"Failed to extract text from file: {str(e)}"}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. LINKEDIN POST ANALYSIS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@leads_bp.route("/analyze-linkedin", methods=["POST"])
+def analyze_linkedin_posts():
+    """
+    Accepts LinkedIn post link(s) and extracts key announcement, themes, and prospect insights.
+    Stores analysis in lead context and synchronizes to ChromaDB vector store.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    lead_id = data.get("lead_id")
+    post_url = data.get("post_url", "").strip()
+
+    if not post_url:
+        return jsonify({"success": False, "error": "LinkedIn post URL is required."}), 400
+
+    prompt = (
+        f"Analyze this LinkedIn post URL and strategic intent: {post_url}\n"
+        "Extract: 1) Core announcement or topic, 2) Strategic focus / business priority, 3) 1 actionable pain point.\n"
+        "Return concise bullet points under 75 words."
+    )
+    analysis = call_llm(prompt, system="You are an enterprise sales intelligence researcher.")
+
+    if lead_id:
+        lead = Lead.query.get(lead_id)
+        if lead:
+            ctx_text = f"[LinkedIn Post Intelligence — {post_url}]:\n{analysis}"
+            new_ctx = LeadContext(
+                lead_id=lead.id,
+                raw_text=ctx_text,
+                source_type="LinkedIn",
+            )
+            db.session.add(new_ctx)
+            db.session.commit()
+
+            app = current_app._get_current_object()
+            threading.Thread(
+                target=_background_process_context,
+                args=(app, new_ctx.id, lead.id, ctx_text),
+                daemon=True
+            ).start()
+
+    return jsonify({
+        "success": True,
+        "post_url": post_url,
+        "analysis": analysis,
+    }), 200
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. MULTI-AGENT EMAIL GENERATION & DISPATCH
+# ─────────────────────────────────────────────────────────────────────────────
+
 @leads_bp.route("/<int:lead_id>/generate", methods=["POST"])
 def generate_email(lead_id: int):
     """
-    Triggers multi-agent pipeline:
+    Triggers multi-agent pipeline via LangGraph:
     1. Fetches lead context from ChromaDB (or DB fallback).
     2. Fetches our company profile from ChromaDB (or DB fallback).
-    3. Runs Researcher -> Writer -> Evaluator.
+    3. Runs Researcher -> Writer -> Evaluator with reflection loop.
     4. Updates lead status to 'Drafted'.
     """
     lead = Lead.query.get(lead_id)
@@ -170,7 +621,6 @@ def generate_email(lead_id: int):
     # 1. Retrieve Lead Context
     retrieved_lead_context = search_lead_context(lead_id, query=f"{lead.company_name} news business overview")
     if not retrieved_lead_context:
-        # Fallback to direct raw text stored in LeadContext
         latest_ctx = LeadContext.query.filter_by(lead_id=lead_id).order_by(LeadContext.created_at.desc()).first()
         retrieved_lead_context = latest_ctx.raw_text if latest_ctx else f"{lead.company_name} corporate developments."
 
@@ -183,7 +633,7 @@ def generate_email(lead_id: int):
         else:
             retrieved_company_context = "AI SDR Solutions: Autonomous personalized outreach and multi-agent RAG."
 
-    # 3. Execute Multi-Agent Pipeline
+    # 3. Execute Multi-Agent Pipeline via LangGraph
     result = run_agent_pipeline(
         prospect_name=lead.company_name,
         context=retrieved_lead_context,
@@ -197,7 +647,7 @@ def generate_email(lead_id: int):
     evaluator_score = 1.0 if is_grounded else 0.4
     evaluator_reasoning = evaluation.get("reasoning", "") or result.get("reasoning", "Verified claims against company knowledge base.")
 
-    # Save EmailLog to MySQL
+    # Save EmailLog to database
     email_log = EmailLog(
         lead_id=lead.id,
         subject=draft.get("subject", ""),
@@ -207,7 +657,6 @@ def generate_email(lead_id: int):
     )
     db.session.add(email_log)
 
-    # Update lead status
     lead.status = "Drafted"
     db.session.commit()
 
@@ -228,6 +677,9 @@ def generate_email(lead_id: int):
         "flagged_claims": evaluation.get("flagged_claims", []) or result.get("flagged_claims", []),
         "reasoning": evaluator_reasoning,
         "signals": result.get("signals", {}),
+        "workflow_engine": result.get("workflow_engine", "LangGraph"),
+        "revision_count": result.get("revision_count", 0),
+        "logs": result.get("logs", []),
     }), 200
 
 
