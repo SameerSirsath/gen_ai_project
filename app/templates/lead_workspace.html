@@ -51,8 +51,14 @@
         </div>
 
         <div class="row g-3">
+          <!-- Prospect Name Field -->
+          <div class="col-12 mb-1">
+            <label class="form-label fw-semibold small text-dark">Target Prospect Name</label>
+            <input type="text" id="prospect-name" name="prospect-name" class="form-control rounded-3" value="{{ lead.company_name }}" required>
+          </div>
+
           <!-- LinkedIn Intelligence Integration -->
-          <div class="col-12 mt-2">
+          <div class="col-12 mb-2">
             <label class="form-label fw-semibold small text-dark"><i class="fa-brands fa-linkedin text-primary me-1"></i> Analyze LinkedIn Posts for {{ lead.company_name }}</label>
             <div class="input-group">
               <input type="url" id="workspaceLinkedinUrl" class="form-control rounded-3" placeholder="Paste LinkedIn post link (e.g. https://www.linkedin.com/posts/...)">

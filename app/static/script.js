@@ -27,11 +27,19 @@ document.addEventListener("DOMContentLoaded", () => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const prospectName = prospectNameInput ? prospectNameInput.value.trim() : "";
-      const context = contextInput ? contextInput.value.trim() : "";
+      let prospectName = prospectNameInput ? prospectNameInput.value.trim() : "";
+      if (!prospectName) {
+        const h1El = document.querySelector("h1");
+        if (h1El) prospectName = h1El.innerText.trim();
+      }
+      let context = contextInput ? contextInput.value.trim() : "";
+      if (!context) {
+        context = `${prospectName} enterprise organization and corporate operations.`;
+        if (contextInput) contextInput.value = context;
+      }
 
-      if (!prospectName || !context) {
-        alert("Please provide both Prospect Name and Context.");
+      if (!prospectName) {
+        alert("Please provide the Prospect Name.");
         return;
       }
 

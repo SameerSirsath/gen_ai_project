@@ -65,12 +65,14 @@ def create_lead():
     Auto mode: Ingests via URL scraping.
     Manual mode: Saves custom research text.
     Also accepts attached files for OCR and LinkedIn post links.
+    Handles duplicates, empty emails (converted to NULL), and upserts gracefully.
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
         company_name = data.get("company_name", "").strip()
         contact_name = data.get("contact_name", "").strip()
-        email = data.get("email", "").strip()
+        raw_email = data.get("email", "").strip()
+        clean_email = raw_email if raw_email else None
         website_url = data.get("website_url", "").strip()
         mode = data.get("mode", "Manual")
         raw_text = data.get("context", data.get("raw_text", "")).strip()
@@ -83,16 +85,47 @@ def create_lead():
         if not company_name:
             return jsonify({"success": False, "error": "Company Name is required."}), 400
 
-        lead = Lead(
-            company_name=company_name,
-            contact_name=contact_name,
-            email=email,
-            website_url=website_url,
-            mode=mode,
-            status="Pending",
-        )
-        db.session.add(lead)
-        db.session.commit()
+        # Check if lead already exists by email, company_name, or website_url
+        existing_lead = None
+        if clean_email:
+            existing_lead = Lead.query.filter_by(email=clean_email).first()
+        if not existing_lead and company_name:
+            existing_lead = Lead.query.filter(db.func.lower(Lead.company_name) == company_name.lower()).first()
+        if not existing_lead and website_url:
+            existing_lead = Lead.query.filter(Lead.website_url == website_url).first()
+
+        if existing_lead:
+            lead = existing_lead
+            lead.mode = mode
+            if contact_name:
+                lead.contact_name = contact_name
+            if website_url:
+                lead.website_url = website_url
+            if clean_email and not lead.email:
+                lead.email = clean_email
+            db.session.commit()
+            status_code = 200
+        else:
+            lead = Lead(
+                company_name=company_name,
+                contact_name=contact_name,
+                email=clean_email,
+                website_url=website_url,
+                mode=mode,
+                status="Pending",
+            )
+            db.session.add(lead)
+            try:
+                db.session.commit()
+            except Exception as commit_err:
+                db.session.rollback()
+                logger.warning(f"[Leads API] Duplicate or constraint conflict during insert, fetching existing: {commit_err}")
+                lead = Lead.query.filter(db.func.lower(Lead.company_name) == company_name.lower()).first()
+                if not lead and website_url:
+                    lead = Lead.query.filter(Lead.website_url == website_url).first()
+                if not lead:
+                    raise commit_err
+            status_code = 201
 
         # If Auto mode and no text provided, attempt live website crawl
         if mode == "Auto" and website_url and not raw_text:
@@ -134,12 +167,13 @@ def create_lead():
 
         return jsonify({
             "success": True,
-            "message": f"Lead '{company_name}' created successfully.",
+            "message": f"Lead '{company_name}' processed successfully.",
             "lead": lead.to_dict()
-        }), 201
+        }), status_code
 
     except Exception as e:
         db.session.rollback()
+        logger.error(f"[Leads API] create_lead failure: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -226,26 +260,43 @@ def upload_excel_leads():
 
             cont_name = get_col_val(row, ["contact_name", "contact", "contact_person", "full_name", "lead_name", "person"])
             email_val = get_col_val(row, ["email", "email_address", "contact_email", "mail"])
+            clean_email = email_val.strip() if (email_val and email_val.strip()) else None
             web_val = get_col_val(row, ["website_url", "website", "url", "domain", "web", "site"])
             ind_val = get_col_val(row, ["industry", "sector", "vertical", "category"])
             notes_val = get_col_val(row, ["context", "notes", "description", "background", "pain_points", "recent_news", "summary"])
 
-            # Avoid email duplicates by generating unique fallback if duplicate
-            if email_val:
-                existing = Lead.query.filter_by(email=email_val).first()
-                if existing:
-                    # Append index to keep unique
-                    email_val = f"{email_val.split('@')[0]}_{idx}@{email_val.split('@')[-1]}"
+            # Check if lead already exists in DB
+            existing_lead = None
+            if clean_email:
+                existing_lead = Lead.query.filter_by(email=clean_email).first()
+            if not existing_lead and comp_name:
+                existing_lead = Lead.query.filter(db.func.lower(Lead.company_name) == comp_name.lower()).first()
 
-            lead = Lead(
-                company_name=comp_name,
-                contact_name=cont_name,
-                email=email_val,
-                website_url=web_val,
-                mode="Excel",
-                status="Pending",
-            )
-            db.session.add(lead)
+            if existing_lead:
+                lead = existing_lead
+                lead.mode = "Excel"
+                if cont_name:
+                    lead.contact_name = cont_name
+                if web_val:
+                    lead.website_url = web_val
+                if clean_email and not lead.email:
+                    lead.email = clean_email
+            else:
+                if clean_email:
+                    # Deduplicate email if conflicting with another row
+                    dup = Lead.query.filter_by(email=clean_email).first()
+                    if dup:
+                        clean_email = f"{clean_email.split('@')[0]}_{idx}@{clean_email.split('@')[-1]}"
+
+                lead = Lead(
+                    company_name=comp_name,
+                    contact_name=cont_name,
+                    email=clean_email,
+                    website_url=web_val,
+                    mode="Excel",
+                    status="Pending",
+                )
+                db.session.add(lead)
             db.session.flush()
 
             # Build rich context for vector store
