@@ -44,6 +44,10 @@ function showModalAlert(title, text, icon = 'success') {
 // ──────────────── Button Loading State Helper ────────────────
 function setButtonLoading(button, isLoading, loadingText = 'Processing...') {
   if (!button) return;
+  if (typeof button === 'string') {
+    button = document.getElementById(button);
+    if (!button) return;
+  }
   if (isLoading) {
     button.dataset.originalHtml = button.innerHTML;
     button.disabled = true;
@@ -53,6 +57,13 @@ function setButtonLoading(button, isLoading, loadingText = 'Processing...') {
     button.innerHTML = button.dataset.originalHtml || 'Submit';
   }
 }
+
+// Master prompt requirement alias
+function toggleBtn(btnId, isLoading, loadingText = 'Processing...') {
+  setButtonLoading(btnId, isLoading, loadingText);
+}
+window.toggleBtn = toggleBtn;
+window.setButtonLoading = setButtonLoading;
 
 // ──────────────── Sidebar Mobile Toggle ────────────────
 document.addEventListener('DOMContentLoaded', () => {

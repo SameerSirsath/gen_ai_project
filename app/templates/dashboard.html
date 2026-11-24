@@ -4,248 +4,215 @@
 {% block title %}Dashboard Overview{% endblock %}
 
 {% block content %}
+<!-- Page Header -->
 <div class="d-flex flex-wrap align-items-center justify-content-between mb-4" data-aos="fade-down">
   <div>
-    <h1 class="font-heading fs-2 fw-bold mb-1">Outreach Intelligence Dashboard</h1>
-    <p class="text-muted small mb-0">Real-time overview of active leads, multi-agent generations, and LLM key routing.</p>
+    <h1 class="font-heading fs-2 fw-bold mb-1">Sales Intelligence Dashboard</h1>
+    <p class="text-muted small mb-0">Autonomous multi-agent prospecting, factual grounding audit, and conversion analytics.</p>
   </div>
   <div class="d-flex align-items-center gap-2 mt-3 mt-md-0 flex-wrap">
     <a href="{{ url_for('leads_api.download_demo_excel') }}" class="btn btn-outline-secondary btn-pill px-3 py-2 text-decoration-none shadow-sm">
-      <i class="fa-solid fa-file-excel text-success me-1"></i> Demo 10-Company Excel
+      <i class="fa-solid fa-file-excel text-success me-1"></i> Demo Excel
     </a>
     <button class="btn btn-outline-teal btn-pill px-3 py-2" data-bs-toggle="modal" data-bs-target="#uploadExcelModal">
-      <i class="fa-solid fa-file-arrow-up me-1"></i> Upload Leads Excel
+      <i class="fa-solid fa-file-arrow-up me-1"></i> Upload Leads
     </button>
-    <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-teal btn-pill px-4 py-2">
-      <i class="fa-solid fa-plus me-1"></i> Add Prospect
+    <a href="{{ url_for('dashboard.new_research_view') }}" class="btn btn-teal btn-pill px-4 py-2">
+      <i class="fa-solid fa-plus me-1"></i> New Research
     </a>
   </div>
 </div>
 
-<!-- ──────────────── Top KPI Cards ──────────────── -->
+<!-- ──────────────── TOP ROW: 4 KPI CARDS ──────────────── -->
 <div class="row g-4 mb-4" data-aos="fade-up">
-  <!-- KPI 1: Total Leads -->
-  <div class="col-md-4">
+  <!-- KPI 1: Total Companies -->
+  <div class="col-sm-6 col-xl-3">
     <div class="kpi-card">
       <div class="kpi-icon-circle">
-        <i class="fa-solid fa-users-viewfinder"></i>
+        <i class="fa-solid fa-building"></i>
       </div>
       <div>
-        <div class="kpi-value">{{ total_leads }}</div>
-        <div class="kpi-label">Total Prospects</div>
+        <div class="kpi-value">{{ total_companies }}</div>
+        <div class="kpi-label">Total Companies</div>
       </div>
     </div>
   </div>
 
-  <!-- KPI 2: Emails Sent -->
-  <div class="col-md-4">
+  <!-- KPI 2: Research Completed -->
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div class="kpi-icon-circle">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+      <div>
+        <div class="kpi-value">{{ completed_research }}</div>
+        <div class="kpi-label">Research Completed</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI 3: Pending -->
+  <div class="col-sm-6 col-xl-3">
+    <div class="kpi-card">
+      <div class="kpi-icon-circle">
+        <i class="fa-solid fa-hourglass-half"></i>
+      </div>
+      <div>
+        <div class="kpi-value">{{ pending_count }}</div>
+        <div class="kpi-label">Pending Research</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI 4: Proposals Ready -->
+  <div class="col-sm-6 col-xl-3">
     <div class="kpi-card">
       <div class="kpi-icon-circle">
         <i class="fa-solid fa-paper-plane"></i>
       </div>
       <div>
-        <div class="kpi-value">{{ sent_emails }}</div>
-        <div class="kpi-label">Dispatched Emails</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- KPI 3: Hallucinations Blocked -->
-  <div class="col-md-4">
-    <div class="kpi-card">
-      <div class="kpi-icon-circle">
-        <i class="fa-solid fa-shield-virus"></i>
-      </div>
-      <div>
-        <div class="kpi-value">{{ hallucinations_blocked }}</div>
-        <div class="kpi-label">Hallucinations Blocked</div>
+        <div class="kpi-value">{{ proposals_ready }}</div>
+        <div class="kpi-label">Proposals Ready</div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ──────────────── Middle Row: Chart.js 7-Day Performance ──────────────── -->
+<!-- ──────────────── MIDDLE ROW: (60% / 40%) ──────────────── -->
 <div class="row g-4 mb-4" data-aos="fade-up" data-aos-delay="100">
-  <div class="col-12">
-    <div class="saas-card">
+  <!-- Left (60%): Research Activity Line Chart -->
+  <div class="col-lg-7 col-xl-7">
+    <div class="saas-card h-100">
       <div class="d-flex align-items-center justify-content-between mb-4 border-bottom pb-3">
         <div>
-          <h3 class="font-heading fs-4 fw-bold mb-1">Emails Generated vs Dispatched</h3>
-          <p class="text-muted small mb-0">Multi-agent drafting throughput and SMTP dispatch conversion over the last 7 days.</p>
+          <h2 class="font-heading fs-5 fw-bold mb-1">Research Activity</h2>
+          <p class="text-muted small mb-0">Daily prospect research and multi-source web intelligence ingestion.</p>
         </div>
-        <span class="badge bg-light text-teal border border-teal-subtle px-3 py-2 rounded-pill small fw-semibold" style="color: #00B4A0;">
-          <i class="fa-solid fa-circle-nodes me-1"></i> Live Activity Feed
+        <span class="badge-pill-custom badge-teal">
+          <i class="fa-solid fa-chart-line me-1"></i> Last 7 Days
         </span>
       </div>
-      <div style="height: 320px; position: relative;">
-        <canvas id="outreachChart"></canvas>
+      <div style="height: 290px; position: relative;">
+        <canvas id="researchActivityChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right (40%): Needs Your Attention List -->
+  <div class="col-lg-5 col-xl-5">
+    <div class="saas-card h-100">
+      <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-3">
+        <div>
+          <h2 class="font-heading fs-5 fw-bold mb-1">Needs your attention</h2>
+          <p class="text-muted small mb-0">High-priority items requiring manual review or input.</p>
+        </div>
+        <span class="badge-pill-custom badge-warning">{{ needs_attention|length }} Actions</span>
+      </div>
+
+      <div class="attention-list">
+        {% for item in needs_attention %}
+        <div class="attention-item d-flex align-items-start justify-content-between p-3 rounded-3 mb-2" style="background: var(--bg-light);">
+          <div class="d-flex align-items-start gap-3">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mt-1" 
+                 style="width: 36px; height: 36px; min-width: 36px; background: {% if item.type == 'danger' %}var(--danger-light); color: var(--danger);{% elif item.type == 'warning' %}var(--warning-light); color: var(--warning);{% else %}var(--soft-mint); color: var(--primary-teal);{% endif %}">
+              <i class="fa-solid {{ item.icon }}"></i>
+            </div>
+            <div>
+              <div class="fw-bold text-dark fs-6">{{ item.company }}</div>
+              <div class="text-muted small mt-1">{{ item.action }}</div>
+            </div>
+          </div>
+          <div class="text-end ps-2">
+            <span class="badge-pill-custom badge-{{ item.type }} d-inline-block text-nowrap">
+              {{ item.badge }}
+            </span>
+            <div class="mt-2">
+              <a href="{{ url_for('dashboard.proposals_view', lead_id=item.lead_id) }}" class="btn btn-sm btn-outline-teal btn-pill px-2 py-1 text-nowrap" style="font-size: 0.75rem;">
+                Review <i class="fa-solid fa-arrow-right ms-1"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
       </div>
     </div>
   </div>
 </div>
 
-<!-- ──────────────── Bottom Row: Recent 5 Leads Table ──────────────── -->
+<!-- ──────────────── BOTTOM ROW: TOP OPPORTUNITIES TABLE ──────────────── -->
 <div class="row g-4" data-aos="fade-up" data-aos-delay="200">
   <div class="col-12">
     <div class="saas-card">
-      <div class="d-flex align-items-center justify-content-between mb-3">
+      <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-3">
         <div>
-          <h3 class="font-heading fs-4 fw-bold mb-1">Recent Prospects</h3>
-          <p class="text-muted small mb-0">Latest additions to your outreach pipeline and their live status.</p>
+          <h2 class="font-heading fs-5 fw-bold mb-1">Top Opportunities</h2>
+          <p class="text-muted small mb-0">Highest converting outreach angles backed by verified market signals.</p>
         </div>
-        <a href="{{ url_for('dashboard.leads_list') }}" class="btn btn-sm btn-teal-outline btn-pill px-3">
-          View All Prospects <i class="fa-solid fa-arrow-right ms-1"></i>
+        <a href="{{ url_for('dashboard.opportunities_view') }}" class="btn btn-sm btn-outline-teal btn-pill px-3">
+          View Pipeline <i class="fa-solid fa-arrow-right ms-1"></i>
         </a>
       </div>
 
       <div class="table-responsive">
-        <table class="saas-table">
+        <table class="table-saas align-middle">
           <thead>
             <tr>
-              <th>Company & Contact</th>
-              <th>Status</th>
-              <th>Mode</th>
-              <th>Mail History</th>
+              <th>Opportunity Name</th>
+              <th>Priority</th>
+              <th>Evidence</th>
+              <th>Grounding Score</th>
               <th class="text-end">Action</th>
             </tr>
           </thead>
           <tbody>
-            {% if recent_leads %}
-              {% for lead in recent_leads %}
-                <tr>
-                  <td>
-                    <div class="d-flex align-items-center gap-3">
-                      <div class="kpi-icon-circle" style="width: 40px; height: 40px; font-size: 1rem;">
-                        <i class="fa-solid fa-building"></i>
-                      </div>
-                      <div>
-                        <div class="fw-bold text-dark">{{ lead.company_name }}</div>
-                        <div class="text-muted small">{{ lead.contact_name or 'No contact specified' }} {% if lead.email %}• {{ lead.email }}{% endif %}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span class="status-badge {{ lead.status.lower() }}">
-                      <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i>
-                      {{ lead.status }}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="badge {{ 'bg-success-subtle text-success border border-success' if lead.mode == 'Excel' else ('bg-info-subtle text-info' if lead.mode == 'Auto' else 'bg-secondary-subtle text-secondary') }} rounded-pill px-3 py-1">
-                      {{ lead.mode }}
-                    </span>
-                  </td>
-                  <td>
-                    <button class="btn btn-sm btn-light border rounded-pill px-3" onclick="openCompanyMailHistory({{ lead.id }}, '{{ lead.company_name|replace('\'', '\\\'') }}')">
-                      <i class="fa-solid fa-clock-rotate-left text-teal me-1"></i> Mail History
-                    </button>
-                  </td>
-                  <td class="text-end">
-                    <div class="d-flex align-items-center justify-content-end gap-2">
-                      <a href="{{ url_for('leads_api.export_lead_emails_csv', lead_id=lead.id) }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Export CSV">
-                        <i class="fa-solid fa-file-csv text-success"></i>
-                      </a>
-                      <a href="{{ url_for('dashboard.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-teal btn-pill px-3">
-                        <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Workspace
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            {% else %}
-              <tr>
-                <td colspan="5" class="text-center py-4 text-muted">
-                  No prospects added yet. Click "+ Add Prospect" or "Upload Leads Excel" above to start.
-                </td>
-              </tr>
-            {% endif %}
+            {% for opp in opportunities %}
+            <tr>
+              <td>
+                <div class="d-flex align-items-center gap-3">
+                  <div class="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" 
+                       style="width: 38px; height: 38px; min-width: 38px; background: var(--dark-navy);">
+                    {{ opp.opportunity_name[:1] }}
+                  </div>
+                  <div>
+                    <div class="fw-semibold text-dark">{{ opp.opportunity_name }}</div>
+                    <small class="text-muted">Target Account</small>
+                  </div>
+                </div>
+              </td>
+              <td>
+                {% if opp.priority == 'Critical' %}
+                  <span class="badge-pill-custom badge-danger"><i class="fa-solid fa-fire me-1"></i> Critical</span>
+                {% elif opp.priority == 'High' %}
+                  <span class="badge-pill-custom badge-warning"><i class="fa-solid fa-bolt me-1"></i> High</span>
+                {% else %}
+                  <span class="badge-pill-custom badge-info"><i class="fa-solid fa-check me-1"></i> Medium</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge-pill-custom badge-teal">
+                  <i class="fa-solid fa-link me-1"></i> {{ opp.evidence }}
+                </span>
+              </td>
+              <td>
+                <span class="badge-pill-custom badge-success">
+                  <i class="fa-solid fa-shield-halved me-1"></i> {{ opp.score }}
+                </span>
+              </td>
+              <td class="text-end">
+                {% if opp.lead %}
+                  <a href="{{ url_for('dashboard.proposals_view', lead_id=opp.lead.id) }}" class="btn btn-sm btn-teal btn-pill px-3 py-1">
+                    Open Proposal <i class="fa-solid fa-chevron-right ms-1"></i>
+                  </a>
+                {% else %}
+                  <a href="{{ url_for('dashboard.new_research_view') }}" class="btn btn-sm btn-outline-teal btn-pill px-3 py-1">
+                    Start Research
+                  </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
           </tbody>
         </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ──────────────── Modal: Upload Excel Sheet of Target Leads ──────────────── -->
-<div class="modal fade" id="uploadExcelModal" tabindex="-1" aria-labelledby="uploadExcelModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content rounded-4 border-0 shadow-lg">
-      <div class="modal-header border-bottom px-4 pt-4 pb-3">
-        <div>
-          <h5 class="modal-title font-heading fw-bold" id="uploadExcelModalLabel">Upload Target Leads Excel Sheet</h5>
-          <p class="text-muted small mb-0">Directly import company profiles, contacts, and auto-sync into ChromaDB vector store.</p>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-
-      <div class="modal-body px-4 py-3">
-        <form id="excelUploadForm" onsubmit="handleExcelUpload(event)">
-          <div class="p-4 border-2 border-dashed rounded-4 text-center bg-light mb-3" style="border: 2px dashed #CBD5E1; cursor: pointer;" onclick="document.getElementById('excelFileInput').click()">
-            <i class="fa-solid fa-file-excel fa-3x text-success mb-2"></i>
-            <h6 class="fw-bold mb-1">Click to select or drag and drop Excel sheet</h6>
-            <p class="text-muted small mb-2">Supports .xlsx, .xls, or .csv files with company name, email, website, and context</p>
-            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" class="d-none" onchange="updateExcelFileName(this)" required>
-            <div id="selectedExcelName" class="badge bg-white text-dark border p-2 mt-1 hidden">
-              <i class="fa-solid fa-paperclip text-teal me-1"></i> <span id="excelFileLabel"></span>
-            </div>
-          </div>
-
-          <div class="d-flex align-items-center justify-content-between p-3 bg-light rounded-3 border mb-3 small">
-            <div>
-              <i class="fa-solid fa-circle-check text-success me-1"></i> <strong>Includes Vector DB Pipeline:</strong> All imported company intelligence is embedded & stored in ChromaDB.
-            </div>
-            <a href="{{ url_for('leads_api.download_demo_excel') }}" class="text-teal fw-semibold text-decoration-none">
-              Download Template
-            </a>
-          </div>
-
-          <div class="d-flex justify-content-end gap-2 pt-3 border-top">
-            <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" id="uploadExcelBtn" class="btn btn-teal btn-pill px-4">
-              <i class="fa-solid fa-cloud-arrow-up me-1"></i> Ingest & Load to Dashboard
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ──────────────── Modal: Company-Wise Mail History Box ──────────────── -->
-<div class="modal fade" id="companyMailHistoryModal" tabindex="-1" aria-labelledby="mailHistoryModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content rounded-4 border-0 shadow-lg">
-      <div class="modal-header border-bottom px-4 pt-4 pb-3">
-        <div class="d-flex align-items-center gap-3">
-          <div class="kpi-icon-circle" style="width: 44px; height: 44px;">
-            <i class="fa-solid fa-inbox"></i>
-          </div>
-          <div>
-            <h5 class="modal-title font-heading fw-bold mb-0" id="mailHistoryCompanyName">Company Mail History</h5>
-            <p class="text-muted small mb-0" id="mailHistoryContactInfo">Complete outbound communications and hallucination fact-check log</p>
-          </div>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <a id="exportCompanyCsvBtn" href="#" class="btn btn-sm btn-outline-teal rounded-pill px-3">
-            <i class="fa-solid fa-file-csv text-success me-1"></i> Export to CSV
-          </a>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-      </div>
-
-      <div class="modal-body px-4 py-3" style="max-height: 65vh; overflow-y: auto;">
-        <div id="mailHistoryLoading" class="text-center py-4">
-          <div class="spinner-border text-teal" role="status"></div>
-          <p class="text-muted small mt-2">Loading complete company mail records...</p>
-        </div>
-        <div id="mailHistoryEmpty" class="text-center py-5 hidden">
-          <i class="fa-regular fa-envelope-open fa-3x text-secondary mb-2"></i>
-          <h6 class="fw-bold">No Emails Dispatched Yet</h6>
-          <p class="text-muted small">No emails have been generated or sent for this prospect. Open Workspace to draft outreach.</p>
-        </div>
-        <div id="mailHistoryList" class="d-flex flex-column gap-3 hidden">
-          <!-- Populated dynamically via JS -->
-        </div>
       </div>
     </div>
   </div>
@@ -254,80 +221,59 @@
 
 {% block extra_scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-  const ctx = document.getElementById('outreachChart');
-  if (!ctx) return;
+document.addEventListener("DOMContentLoaded", function() {
+  const ctx = document.getElementById("researchActivityChart");
+  if (ctx) {
+    const labels = {{ chart_labels | tojson }};
+    const data = {{ chart_activity | tojson }};
 
-  const labels = {{ chart_labels | tojson }};
-  const generatedData = {{ chart_generated | tojson }};
-  const sentData = {{ chart_sent | tojson }};
-
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: 'Emails Drafted by AI Writer',
-          data: generatedData,
-          borderColor: '#1B264F',
-          backgroundColor: 'rgba(27, 38, 79, 0.05)',
+    new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Research Queries Ingested",
+          data: data,
+          borderColor: "#00B4A0",
+          backgroundColor: "rgba(0, 180, 160, 0.08)",
+          fill: true,
           tension: 0.35,
           borderWidth: 3,
-          fill: true,
-          pointBackgroundColor: '#1B264F',
-          pointRadius: 5
-        },
-        {
-          label: 'Emails Dispatched via SMTP',
-          data: sentData,
-          borderColor: '#00B4A0',
-          backgroundColor: 'rgba(0, 180, 160, 0.15)',
-          tension: 0.35,
-          borderWidth: 3,
-          fill: true,
-          pointBackgroundColor: '#00B4A0',
-          pointRadius: 5
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: 'index',
-        intersect: false
+          pointBackgroundColor: "#00B4A0",
+          pointBorderColor: "#FFFFFF",
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7
+        }]
       },
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: {
-            boxWidth: 14,
-            usePointStyle: true,
-            font: { family: "'Inter', sans-serif", size: 12, weight: 500 }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "#1B264F",
+            titleFont: { family: "Inter", size: 13, weight: "bold" },
+            bodyFont: { family: "Inter", size: 12 },
+            padding: 12,
+            cornerRadius: 8,
+            displayColors: false
           }
         },
-        tooltip: {
-          backgroundColor: '#1B264F',
-          titleFont: { family: "'Playfair Display', serif", size: 13 },
-          bodyFont: { family: "'Inter', sans-serif", size: 12 },
-          cornerRadius: 8,
-          padding: 12
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          grid: { color: '#E8EEF3' },
-          ticks: { font: { family: "'Inter', sans-serif" } }
-        },
-        x: {
-          grid: { display: false },
-          ticks: { font: { family: "'Inter', sans-serif" } }
+        scales: {
+          y: {
+            beginAtZero: true,
+            grid: { color: "rgba(226, 232, 240, 0.7)", drawBorder: false },
+            ticks: { font: { family: "Inter" }, color: "#64748B", precision: 0 }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { font: { family: "Inter" }, color: "#64748B" }
+          }
         }
       }
-    }
-  });
+    });
+  }
 });
 </script>
 {% endblock %}
