@@ -111,9 +111,19 @@ def writer_node(state: SalesOutreachState) -> Dict[str, Any]:
     except Exception as e:
         logger.warning(f"[LangGraph:Writer] Drafting exception: {e}")
         draft_dict = {
-            "subject": f"Accelerating {prospect}'s outbound pipeline",
-            "body": f"Noticed {prospect}'s recent growth initiatives. Many teams encounter research latency when scaling outbound pipeline. We help enterprise teams cut prospect prep time by 90% with grounded AI automation. Open to a brief 5-minute chat this Thursday?",
-            "claims_used": ["growth initiatives", "cut prospect prep time by 90%"],
+            "subject": f"Strategic Growth & Outreach Optimization for {prospect}",
+            "body": (
+                f"Dear {prospect} Leadership Team,\n\n"
+                f"I have been tracking {prospect}'s impressive growth trajectory and recent milestones. "
+                f"As enterprise organizations scale their operations, many encounter operational bottlenecks "
+                f"and research latency across their sales and business development pipelines.\n\n"
+                f"Our AI sales outreach platform enables leading teams to cut prospect preparation time by 90% "
+                f"while generating factually grounded, high-converting communications with verified grounding.\n\n"
+                f"Would you be open to a brief 10-minute introductory conversation this Thursday to explore how we can support your pipeline goals?\n\n"
+                f"Best regards,\n"
+                f"BizCorp AI Outreach Team"
+            ),
+            "claims_used": ["growth trajectory", "cut prospect preparation time by 90%"],
         }
 
     log_entry = f"Writer completed draft (Revision #{rev_count}) with {len(draft_dict.get('claims_used', []))} claims."

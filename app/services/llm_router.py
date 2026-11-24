@@ -21,11 +21,11 @@ from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
-# Preferred Gemini models ordered by efficiency & minimal token usage
+# Preferred Gemini models ordered by confirmed Google API support, high speed & accuracy
 GEMINI_MODELS = [
-    "gemini-3-flash-preview",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-flash",
     "gemini-flash-latest",
 ]
 
@@ -110,11 +110,13 @@ def get_active_keys(provider: str) -> List[str]:
     return keys
 
 
-def call_llm(prompt: str, system: str = "") -> str:
+def call_llm(prompt: str, system: str = "", max_tokens: int = 1800) -> str:
     """
     Calls the LLM using active Gemini keys with intelligent automatic fallback
     across keys and models. If all Gemini keys fail or are rate-limited,
     cascades to Groq keys.
+    Configured with generous token limit (default 1800) to produce complete,
+    formal, end-to-end sales emails without truncation.
     """
     gemini_keys = get_active_keys("gemini")
     groq_keys = get_active_keys("groq")
@@ -128,15 +130,15 @@ def call_llm(prompt: str, system: str = "") -> str:
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.35,
-                        "maxOutputTokens": 650,  # Minimal token usage
-                        "topP": 0.85,
+                        "maxOutputTokens": max_tokens,  # Ample tokens for complete formal outreach
+                        "topP": 0.90,
                     }
                 }
                 if system:
                     payload["systemInstruction"] = {"parts": [{"text": system}]}
 
                 try:
-                    with httpx.Client(timeout=8.0) as client:
+                    with httpx.Client(timeout=10.0) as client:
                         resp = client.post(
                             gemini_url,
                             headers={"Content-Type": "application/json"},
@@ -181,10 +183,10 @@ def call_llm(prompt: str, system: str = "") -> str:
             "model": "llama-3.3-70b-versatile",
             "messages": messages,
             "temperature": 0.5,
-            "max_tokens": 600,
+            "max_tokens": max_tokens,
         }
 
-        with httpx.Client(timeout=25.0) as client:
+        with httpx.Client(timeout=15.0) as client:
             for idx, key in enumerate(groq_keys, start=1):
                 try:
                     headers = {

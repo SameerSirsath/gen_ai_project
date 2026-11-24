@@ -57,16 +57,58 @@
             <input type="text" id="prospect-name" name="prospect-name" class="form-control rounded-3" value="{{ lead.company_name }}" required>
           </div>
 
-          <!-- LinkedIn Intelligence Integration -->
+          <!-- Multimodal OCR Document/Image Attachment in Workspace -->
           <div class="col-12 mb-2">
-            <label class="form-label fw-semibold small text-dark"><i class="fa-brands fa-linkedin text-primary me-1"></i> Analyze LinkedIn Posts for {{ lead.company_name }}</label>
-            <div class="input-group">
-              <input type="url" id="workspaceLinkedinUrl" class="form-control rounded-3" placeholder="Paste LinkedIn post link (e.g. https://www.linkedin.com/posts/...)">
-              <button type="button" class="btn btn-outline-teal rounded-3 px-3" onclick="analyzeWorkspaceLinkedIn({{ lead.id }})">
-                <i class="fa-solid fa-chart-line me-1"></i> Analyze & Ingest into Vector DB
+            <div class="p-3 bg-light border border-teal-subtle rounded-3">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <label class="form-label fw-bold small text-teal mb-0" style="color: #00B4A0;">
+                  <i class="fa-solid fa-camera-retro me-1"></i> Attach Intelligence Documents (OCR & Vision)
+                </label>
+                <button type="button" class="btn btn-sm btn-outline-teal rounded-pill px-2 py-1" onclick="addOcrFileRow('workspaceOcrFilesContainer')" title="Add another document">
+                  <i class="fa-solid fa-plus me-1"></i> Add Doc
+                </button>
+              </div>
+              <div id="workspaceOcrFilesContainer" class="d-flex flex-column gap-2 mb-2">
+                <div class="input-group ocr-file-row">
+                  <input type="file" class="form-control rounded-3 ocr-file-input" accept="image/*,.pdf,.docx,.txt" onchange="handleOcrAttachment(this)">
+                  <button type="button" class="btn btn-outline-danger rounded-3" onclick="removeOcrFileRow(this)" title="Remove" style="display: none;">
+                    <i class="fa-solid fa-trash-can"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center justify-content-between pt-1 gap-2">
+                <span class="badge bg-white text-muted border small">Extracts company pitch decks, PDFs, business cards</span>
+                <button type="button" class="btn btn-teal rounded-pill px-3 py-1" onclick="triggerWorkspaceOcrExtraction()">
+                  <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Extract & Append to Context
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- LinkedIn Intelligence Integration (with + icon for multiple posts) -->
+          <div class="col-12 mb-2">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <label class="form-label fw-semibold small text-dark mb-0">
+                <i class="fa-brands fa-linkedin text-primary me-1"></i> Analyze LinkedIn Posts for {{ lead.company_name }}
+              </label>
+              <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 py-1" onclick="addLinkedInUrlRow('workspaceLinkedinUrlsContainer')" title="Add another LinkedIn post link">
+                <i class="fa-solid fa-plus me-1"></i> Add Post Link
               </button>
             </div>
-            <div class="form-text small">Extracts company announcements and stores them directly into this company's ChromaDB vector partition.</div>
+            <div id="workspaceLinkedinUrlsContainer" class="d-flex flex-column gap-2 mb-2">
+              <div class="input-group linkedin-url-row">
+                <input type="url" class="form-control rounded-3 workspace-linkedin-input" placeholder="Paste LinkedIn post link (e.g. https://www.linkedin.com/posts/...)">
+                <button type="button" class="btn btn-outline-primary rounded-3" onclick="addLinkedInUrlRow('workspaceLinkedinUrlsContainer')" title="Add another link">
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+              </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="form-text small">Extracts executive announcements and vectorizes them into this lead's ChromaDB partition.</div>
+              <button type="button" class="btn btn-sm btn-outline-teal rounded-pill px-3" onclick="analyzeWorkspaceLinkedIn({{ lead.id }})">
+                <i class="fa-solid fa-chart-line me-1"></i> Analyze All Posts & Ingest
+              </button>
+            </div>
           </div>
 
           <!-- Raw Text / Prospect Context Input Area -->

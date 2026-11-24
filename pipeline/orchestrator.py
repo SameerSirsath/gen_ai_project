@@ -25,9 +25,9 @@ def query_chromadb_context(prospect_name: str, top_k: int = 5) -> str:
     try:
         from pipeline.vector_store import get_vector_store
         vs = get_vector_store(namespace=prospect_name)
-        results = vs.query(query_text=f"{prospect_name} company overview news pain points", top_k=top_k)
+        results = vs.query(text=f"{prospect_name} company overview news pain points", top_k=top_k)
         if results:
-            texts = [r.get("text", "") for r in results if r.get("text")]
+            texts = [getattr(r, "text", getattr(r, "page_content", str(r))) for r in results]
             return "\n\n".join(texts)
     except Exception as e:
         # If vector store query fails or namespace doesn't exist, log and continue
@@ -105,6 +105,10 @@ def run_agent_pipeline(
         return {
             "success": True,
             "approved": approved,
+            "status": "PASSED" if approved else "BLOCKED",
+            "subject": draft.get("subject", ""),
+            "body": draft.get("body", ""),
+            "claims_used": draft.get("claims_used", []),
             "signals": result.get("signals", {}),
             "draft": draft,
             "evaluation": evaluation,

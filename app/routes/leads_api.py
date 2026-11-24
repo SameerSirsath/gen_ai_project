@@ -491,106 +491,131 @@ def export_all_emails_csv():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. MULTIMODAL OCR (IMAGES, DOCS, PDFS)
+# 4. MULTIMODAL OCR (MULTIPLE IMAGES, DOCS, PDFS)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @leads_bp.route("/ocr-extract", methods=["POST"])
 def ocr_extract_lead():
     """
-    Multimodal extraction endpoint:
+    Multimodal extraction endpoint supporting multiple attached documents:
     Accepts attached image files (.png, .jpg, .jpeg, .webp), PDF documents, or text files.
     Uses Gemini Multimodal Vision / pdfplumber to extract company name, contact,
-    email, website, and rich intelligence.
+    email, website, and rich intelligence across all uploaded files.
     """
-    file = request.files.get("file") or request.files.get("attachment")
-    if not file or not file.filename:
-        return jsonify({"success": False, "error": "No file uploaded for OCR."}), 400
+    raw_files = request.files.getlist("files")
+    if not raw_files:
+        raw_files = request.files.getlist("file")
+    if not raw_files:
+        single = request.files.get("file") or request.files.get("attachment")
+        if single and single.filename:
+            raw_files = [single]
 
-    filename = file.filename.lower()
-    file_bytes = file.read()
+    valid_files = [f for f in raw_files if f and f.filename]
+    if not valid_files:
+        return jsonify({"success": False, "error": "No valid files uploaded for OCR."}), 400
 
-    extracted_text = ""
+    extracted_sections = []
     company_name = ""
     contact_name = ""
     email = ""
     website_url = ""
 
     try:
-        if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
-            # Image OCR via Gemini Vision
-            mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"
-            b64_img = base64.b64encode(file_bytes).decode("utf-8")
-            prompt = (
-                "Analyze this business document/card/image. Extract and return strictly valid JSON matching:\n"
-                "{\n"
-                '  "company_name": "name of company",\n'
-                '  "contact_name": "person name if visible",\n'
-                '  "email": "email if visible",\n'
-                '  "website_url": "website url if visible",\n'
-                '  "overview": "concise 2-sentence summary of products, services, or announcement",\n'
-                '  "pain_points": ["point 1", "point 2"]\n'
-                "}\n"
-                "Do not include markdown fences."
-            )
-            llm_res = call_gemini_multimodal(prompt, mime_type, b64_img)
-            try:
-                clean_json = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", llm_res, flags=re.DOTALL).strip()
-                parsed = json.loads(clean_json)
-                company_name = parsed.get("company_name", "")
-                contact_name = parsed.get("contact_name", "")
-                email = parsed.get("email", "")
-                website_url = parsed.get("website_url", "")
-                overview = parsed.get("overview", "")
-                pains = parsed.get("pain_points", [])
-                extracted_text = f"Overview: {overview}\nPain Points: {', '.join(pains)}"
-            except Exception:
-                extracted_text = llm_res
+        for file in valid_files:
+            filename = file.filename.lower()
+            file_bytes = file.read()
+            file_summary = ""
 
-        elif filename.endswith(".pdf"):
-            # PDF text extraction
-            import pdfplumber
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                pages_text = [page.extract_text() or "" for page in pdf.pages[:5]]
-                extracted_text = "\n".join(pages_text).strip()
-
-            # If text is very short (scanned PDF), use OCR on first page
-            if len(extracted_text) < 100:
-                try:
-                    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                        if pdf.pages:
-                            first_page_img = pdf.pages[0].to_image(resolution=150).original
-                            img_buf = io.BytesIO()
-                            first_page_img.save(img_buf, format="PNG")
-                            b64_pdf_img = base64.b64encode(img_buf.getvalue()).decode("utf-8")
-                            extracted_text = call_gemini_multimodal("Transcribe and summarize this document.", "image/png", b64_pdf_img)
-                except Exception as e:
-                    logger.warning(f"Scanned PDF OCR fallback failed: {e}")
-
-            # Extract entities using LLM
-            if extracted_text:
-                summary_prompt = (
-                    f"Extract JSON from this document text:\n{extracted_text[:1500]}\n"
-                    'Return JSON: {"company_name": "", "contact_name": "", "email": "", "website_url": ""}'
+            if filename.endswith((".png", ".jpg", ".jpeg", ".webp")):
+                # Image OCR via Gemini Vision
+                mime_type = "image/png" if filename.endswith(".png") else "image/jpeg"
+                b64_img = base64.b64encode(file_bytes).decode("utf-8")
+                prompt = (
+                    "Analyze this business document/card/screenshot. Extract and return strictly valid JSON matching:\n"
+                    "{\n"
+                    '  "company_name": "name of company",\n'
+                    '  "contact_name": "person name if visible",\n'
+                    '  "email": "email if visible",\n'
+                    '  "website_url": "website url if visible",\n'
+                    '  "overview": "concise 2-sentence summary of products, services, or announcement",\n'
+                    '  "pain_points": ["point 1", "point 2"]\n'
+                    "}\n"
+                    "Do not include markdown fences."
                 )
-                res = call_llm(summary_prompt, system="Respond in valid JSON only.")
+                llm_res = call_gemini_multimodal(prompt, mime_type, b64_img)
                 try:
-                    clean = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", res, flags=re.DOTALL).strip()
-                    ent = json.loads(clean)
-                    company_name = ent.get("company_name", "")
-                    contact_name = ent.get("contact_name", "")
-                    email = ent.get("email", "")
-                    website_url = ent.get("website_url", "")
+                    clean_json = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", llm_res, flags=re.DOTALL).strip()
+                    parsed = json.loads(clean_json)
+                    if not company_name and parsed.get("company_name"):
+                        company_name = parsed["company_name"]
+                    if not contact_name and parsed.get("contact_name"):
+                        contact_name = parsed["contact_name"]
+                    if not email and parsed.get("email"):
+                        email = parsed["email"]
+                    if not website_url and parsed.get("website_url"):
+                        website_url = parsed["website_url"]
+                    overview = parsed.get("overview", "")
+                    pains = parsed.get("pain_points", [])
+                    file_summary = f"[{file.filename} Overview]: {overview}\nKey Focus / Pain Points: {', '.join(pains)}"
                 except Exception:
-                    pass
+                    file_summary = f"[{file.filename} Extraction]:\n{llm_res}"
 
-        else:
-            # Plain text / fallback
-            extracted_text = file_bytes.decode("utf-8", errors="replace")
+            elif filename.endswith(".pdf"):
+                # PDF text extraction
+                import pdfplumber
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    pages_text = [page.extract_text() or "" for page in pdf.pages[:5]]
+                    doc_text = "\n".join(pages_text).strip()
+
+                if len(doc_text) < 100:
+                    try:
+                        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                            if pdf.pages:
+                                first_page_img = pdf.pages[0].to_image(resolution=150).original
+                                img_buf = io.BytesIO()
+                                first_page_img.save(img_buf, format="PNG")
+                                b64_pdf_img = base64.b64encode(img_buf.getvalue()).decode("utf-8")
+                                doc_text = call_gemini_multimodal("Transcribe and summarize this document.", "image/png", b64_pdf_img)
+                    except Exception as e:
+                        logger.warning(f"Scanned PDF OCR fallback failed: {e}")
+
+                if doc_text:
+                    summary_prompt = (
+                        f"Extract JSON from this document text:\n{doc_text[:1500]}\n"
+                        'Return JSON: {"company_name": "", "contact_name": "", "email": "", "website_url": "", "summary": ""}'
+                    )
+                    res = call_llm(summary_prompt, system="Respond in valid JSON only.")
+                    try:
+                        clean = re.sub(r"```(?:json)?\s*(\{.*?\})\s*```", r"\1", res, flags=re.DOTALL).strip()
+                        ent = json.loads(clean)
+                        if not company_name and ent.get("company_name"):
+                            company_name = ent["company_name"]
+                        if not contact_name and ent.get("contact_name"):
+                            contact_name = ent["contact_name"]
+                        if not email and ent.get("email"):
+                            email = ent["email"]
+                        if not website_url and ent.get("website_url"):
+                            website_url = ent["website_url"]
+                        file_summary = f"[{file.filename} Summary]: {ent.get('summary', doc_text[:350])}"
+                    except Exception:
+                        file_summary = f"[{file.filename} Content]:\n{doc_text[:400]}"
+                else:
+                    file_summary = f"[{file.filename}]: Document processed."
+
+            else:
+                raw_decoded = file_bytes.decode("utf-8", errors="replace")
+                file_summary = f"[{file.filename}]:\n{raw_decoded[:500]}"
+
+            if file_summary:
+                extracted_sections.append(file_summary)
+
+        combined_text = "\n\n".join(extracted_sections)
 
         return jsonify({
             "success": True,
-            "filename": filename,
-            "extracted_text": extracted_text[:2000],
+            "total_files": len(valid_files),
+            "filenames": [f.filename for f in valid_files],
+            "extracted_text": combined_text[:4000],
             "company_name": company_name,
             "contact_name": contact_name,
             "email": email,
@@ -599,37 +624,51 @@ def ocr_extract_lead():
 
     except Exception as e:
         logger.error(f"OCR processing failure: {e}", exc_info=True)
-        return jsonify({"success": False, "error": f"Failed to extract text from file: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"Failed to extract text from files: {str(e)}"}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. LINKEDIN POST ANALYSIS
+# 5. LINKEDIN POST ANALYSIS (MULTIPLE POST URLS)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @leads_bp.route("/analyze-linkedin", methods=["POST"])
 def analyze_linkedin_posts():
     """
-    Accepts LinkedIn post link(s) and extracts key announcement, themes, and prospect insights.
-    Stores analysis in lead context and synchronizes to ChromaDB vector store.
+    Accepts one or multiple LinkedIn post links and extracts key announcements, themes,
+    and strategic prospect insights with Gemini. Stores analysis in lead context
+    and synchronizes to ChromaDB vector store.
     """
     data = request.get_json(force=True, silent=True) or {}
     lead_id = data.get("lead_id")
-    post_url = data.get("post_url", "").strip()
 
-    if not post_url:
-        return jsonify({"success": False, "error": "LinkedIn post URL is required."}), 400
+    # Collect URLs from post_urls list or single post_url
+    urls_input = data.get("post_urls") or data.get("post_url") or []
+    if isinstance(urls_input, str):
+        urls_list = [u.strip() for u in re.split(r"[,\n]+", urls_input) if u.strip()]
+    elif isinstance(urls_input, list):
+        urls_list = [str(u).strip() for u in urls_input if str(u).strip()]
+    else:
+        urls_list = []
 
-    prompt = (
-        f"Analyze this LinkedIn post URL and strategic intent: {post_url}\n"
-        "Extract: 1) Core announcement or topic, 2) Strategic focus / business priority, 3) 1 actionable pain point.\n"
-        "Return concise bullet points under 75 words."
-    )
-    analysis = call_llm(prompt, system="You are an enterprise sales intelligence researcher.")
+    if not urls_list:
+        return jsonify({"success": False, "error": "At least one LinkedIn post URL is required."}), 400
+
+    analysis_blocks = []
+    for idx, post_url in enumerate(urls_list, start=1):
+        prompt = (
+            f"Analyze this LinkedIn post URL and strategic intent: {post_url}\n"
+            "Extract: 1) Core announcement or topic, 2) Strategic focus / business priority, 3) 1 actionable pain point.\n"
+            "Return concise bullet points under 70 words."
+        )
+        post_analysis = call_llm(prompt, system="You are an enterprise sales intelligence researcher.")
+        analysis_blocks.append(f"Post #{idx} ({post_url}):\n{post_analysis}")
+
+    full_analysis = "\n\n".join(analysis_blocks)
 
     if lead_id:
         lead = Lead.query.get(lead_id)
         if lead:
-            ctx_text = f"[LinkedIn Post Intelligence — {post_url}]:\n{analysis}"
+            ctx_text = f"[LinkedIn Strategic Intelligence ({len(urls_list)} posts)]:\n{full_analysis}"
             new_ctx = LeadContext(
                 lead_id=lead.id,
                 raw_text=ctx_text,
@@ -647,8 +686,9 @@ def analyze_linkedin_posts():
 
     return jsonify({
         "success": True,
-        "post_url": post_url,
-        "analysis": analysis,
+        "post_urls": urls_list,
+        "total_analyzed": len(urls_list),
+        "analysis": full_analysis,
     }), 200
 
 

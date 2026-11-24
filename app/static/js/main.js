@@ -256,6 +256,13 @@ async function handleCreateLead(event, mode) {
     payload.email = document.getElementById('manualEmail').value.trim();
     payload.website_url = document.getElementById('manualWebsite').value.trim();
     payload.raw_text = document.getElementById('manualRawText').value.trim();
+    const linkedinInputs = document.querySelectorAll('.manual-linkedin-input');
+    const linkedinUrls = [];
+    linkedinInputs.forEach(inp => {
+      const val = inp.value.trim();
+      if (val) linkedinUrls.push(val);
+    });
+    payload.linkedin_urls = linkedinUrls.join('\n');
     if (!payload.company_name) {
       showToast('Company Name is required.', true);
       return;
@@ -563,6 +570,7 @@ function autofillDemoSite(name, url) {
   showToast(`Selected demo prospect: ${name}`);
 }
 
+// ──────────────── Dynamic Multi-Document OCR & Multi-LinkedIn Helpers ────────────────
 function handleOcrAttachment(input) {
   const badge = document.getElementById('ocrStatusBadge');
   if (input.files && input.files.length > 0) {
@@ -574,19 +582,70 @@ function handleOcrAttachment(input) {
   }
 }
 
-async function triggerOcrExtraction() {
-  const fileInput = document.getElementById('ocrAttachmentFile');
-  const btn = document.getElementById('ocrExtractBtn');
+function addOcrFileRow(containerId = 'ocrFilesContainer') {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'input-group ocr-file-row';
+  row.innerHTML = `
+    <input type="file" class="form-control rounded-3 ocr-file-input" accept="image/*,.pdf,.docx,.txt" onchange="handleOcrAttachment(this)">
+    <button type="button" class="btn btn-outline-danger rounded-3" onclick="removeOcrFileRow(this)" title="Remove document">
+      <i class="fa-solid fa-trash-can"></i>
+    </button>
+  `;
+  container.appendChild(row);
+  showToast('Added attachment slot. Click or browse to select another document.');
+}
 
-  if (!fileInput.files || fileInput.files.length === 0) {
-    showToast('Please choose an image, PDF, or document first.', true);
+function removeOcrFileRow(btn) {
+  const row = btn.closest('.ocr-file-row');
+  if (row) row.remove();
+}
+
+function addLinkedInUrlRow(containerId = 'manualLinkedinUrlsContainer') {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const isWorkspace = containerId.includes('workspace');
+  const inputClass = isWorkspace ? 'workspace-linkedin-input' : 'manual-linkedin-input';
+  const row = document.createElement('div');
+  row.className = 'input-group linkedin-url-row';
+  row.innerHTML = `
+    <input type="url" class="form-control rounded-3 ${inputClass}" placeholder="https://www.linkedin.com/posts/executive-announcement-...">
+    <button type="button" class="btn btn-outline-danger rounded-3" onclick="removeLinkedInUrlRow(this)" title="Remove link">
+      <i class="fa-solid fa-trash-can"></i>
+    </button>
+  `;
+  container.appendChild(row);
+  showToast('Added another LinkedIn URL row.');
+}
+
+function removeLinkedInUrlRow(btn) {
+  const row = btn.closest('.linkedin-url-row');
+  if (row) row.remove();
+}
+
+async function triggerOcrExtraction() {
+  const container = document.getElementById('ocrFilesContainer');
+  const inputs = container ? container.querySelectorAll('.ocr-file-input') : [];
+  const files = [];
+  inputs.forEach(inp => {
+    if (inp.files && inp.files.length > 0) {
+      for (let i = 0; i < inp.files.length; i++) {
+        files.push(inp.files[i]);
+      }
+    }
+  });
+
+  if (files.length === 0) {
+    showToast('Please attach at least one document or image first.', true);
     return;
   }
 
   const formData = new FormData();
-  formData.append('file', fileInput.files[0]);
+  files.forEach(f => formData.append('files', f));
 
-  setButtonLoading(btn, true, 'Gemini Vision Extracting...');
+  const btn = document.getElementById('ocrExtractBtn');
+  setButtonLoading(btn, true, `Extracting ${files.length} File(s)...`);
   try {
     const res = await fetch('/api/leads/ocr-extract', {
       method: 'POST',
@@ -613,7 +672,7 @@ async function triggerOcrExtraction() {
       document.getElementById('manualRawText').value = (current ? current + '\n\n' : '') + data.extracted_text;
     }
 
-    showToast('Extracted business information with Gemini Vision OCR!');
+    showToast(`Extracted intelligence from ${data.total_files || files.length} document(s) via Gemini Vision!`);
   } catch (err) {
     showToast(err.message, true);
   } finally {
@@ -621,65 +680,112 @@ async function triggerOcrExtraction() {
   }
 }
 
-async function analyzeLinkedInPostQuick() {
-  const urlInput = document.getElementById('manualLinkedinUrl');
-  const postUrl = urlInput ? urlInput.value.trim() : '';
+async function triggerWorkspaceOcrExtraction() {
+  const container = document.getElementById('workspaceOcrFilesContainer');
+  const inputs = container ? container.querySelectorAll('.ocr-file-input') : [];
+  const files = [];
+  inputs.forEach(inp => {
+    if (inp.files && inp.files.length > 0) {
+      for (let i = 0; i < inp.files.length; i++) {
+        files.push(inp.files[i]);
+      }
+    }
+  });
 
-  if (!postUrl) {
-    showToast('Please paste a LinkedIn post URL first.', true);
+  if (files.length === 0) {
+    showToast('Please select at least one document or image to attach.', true);
     return;
   }
 
-  showToast('Analyzing LinkedIn post via Sales Intelligence...');
+  const formData = new FormData();
+  files.forEach(f => formData.append('files', f));
+
+  showToast(`Extracting ${files.length} document(s) with Gemini Vision...`);
+  try {
+    const res = await fetch('/api/leads/ocr-extract', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Document extraction failed.');
+
+    const contextEl = document.getElementById('prospect-context');
+    if (contextEl && data.extracted_text) {
+      const cur = contextEl.value.trim();
+      contextEl.value = (cur ? cur + '\n\n[Attached Documents OCR Intelligence]:\n' : '') + data.extracted_text;
+    }
+
+    showToast(`Appended intelligence from ${data.total_files || files.length} document(s) to context!`);
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+async function analyzeLinkedInPostQuick() {
+  const inputs = document.querySelectorAll('.manual-linkedin-input');
+  const urls = [];
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val) urls.push(val);
+  });
+
+  if (urls.length === 0) {
+    showToast('Please enter at least one LinkedIn post URL.', true);
+    return;
+  }
+
+  showToast(`Analyzing ${urls.length} LinkedIn post(s) via Sales Intelligence...`);
   try {
     const res = await fetch('/api/leads/analyze-linkedin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_url: postUrl })
+      body: JSON.stringify({ post_urls: urls })
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'LinkedIn analysis failed.');
 
     const rawTextEl = document.getElementById('manualRawText');
     if (rawTextEl) {
-      const appendText = `\n[LinkedIn Intelligence - ${postUrl}]:\n${data.analysis}\n`;
+      const appendText = `\n[LinkedIn Strategic Intelligence (${data.total_analyzed || urls.length} Posts)]:\n${data.analysis}\n`;
       rawTextEl.value = (rawTextEl.value + '\n' + appendText).trim();
     }
 
-    showToast('LinkedIn post insights added to research context!');
+    showToast(`Extracted strategic insights from ${data.total_analyzed || urls.length} LinkedIn post(s)!`);
   } catch (err) {
     showToast(err.message, true);
   }
 }
 
-
 async function analyzeWorkspaceLinkedIn(leadId) {
-  const urlInput = document.getElementById('workspaceLinkedinUrl');
-  const postUrl = urlInput ? urlInput.value.trim() : '';
+  const inputs = document.querySelectorAll('.workspace-linkedin-input');
+  const urls = [];
+  inputs.forEach(inp => {
+    const val = inp.value.trim();
+    if (val) urls.push(val);
+  });
 
-  if (!postUrl) {
-    showToast('Please paste a LinkedIn post URL first.', true);
+  if (urls.length === 0) {
+    showToast('Please paste at least one LinkedIn post URL.', true);
     return;
   }
 
-  showToast('Analyzing LinkedIn post and updating vector store...');
+  showToast(`Analyzing ${urls.length} LinkedIn post(s) and syncing to ChromaDB...`);
   try {
     const res = await fetch('/api/leads/analyze-linkedin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_id: leadId, post_url: postUrl })
+      body: JSON.stringify({ lead_id: leadId, post_urls: urls })
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'LinkedIn analysis failed.');
 
     const contextEl = document.getElementById('prospect-context');
     if (contextEl) {
-      const appendText = `\n\n[LinkedIn Post Intelligence — ${postUrl}]:\n${data.analysis}\n`;
+      const appendText = `\n\n[LinkedIn Post Intelligence (${data.total_analyzed || urls.length} Posts)]:\n${data.analysis}\n`;
       contextEl.value = (contextEl.value + appendText).trim();
     }
 
-    showToast('LinkedIn post analyzed and synced to vector store!');
-    if (urlInput) urlInput.value = '';
+    showToast(`Analyzed ${data.total_analyzed || urls.length} LinkedIn post(s) & synced to ChromaDB!`);
   } catch (err) {
     showToast(err.message, true);
   }

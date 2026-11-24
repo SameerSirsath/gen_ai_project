@@ -60,9 +60,9 @@ class ResearchSignals(BaseModel):
 
 class WriterOutput(BaseModel):
     """
-    Data contract representing the cold outreach email drafted by the Writer Agent.
+    Data contract representing the formal outreach email drafted by the Writer Agent.
     - subject: Email subject line.
-    - body: Email body (exactly 3 sentences).
+    - body: Complete formal B2B email body.
     - claims_used: The specific facts pulled from the context.
     """
     subject: str = Field(
@@ -71,7 +71,7 @@ class WriterOutput(BaseModel):
     )
     body: str = Field(
         ...,
-        description="Email body (3 sentences)."
+        description="Complete formal B2B email body."
     )
     claims_used: List[str] = Field(
         default_factory=list,

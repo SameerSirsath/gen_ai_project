@@ -274,21 +274,31 @@
           <div class="tab-pane fade" id="manual-pane" role="tabpanel">
             <form id="manualLeadForm" onsubmit="handleCreateLead(event, 'Manual')">
               
-              <!-- 1. Multimodal OCR Document/Image Attachment Box -->
+              <!-- 1. Multimodal OCR Document/Image Attachment Box (with + icon for multiple docs) -->
               <div class="mb-3 p-3 bg-light border border-teal-subtle rounded-3">
                 <div class="d-flex align-items-center justify-content-between mb-2">
                   <label class="form-label fw-bold small text-teal mb-0" style="color: #00B4A0;">
-                    <i class="fa-solid fa-camera-retro me-1"></i> Multimodal OCR Attachment (Images, Docs, PDFs)
+                    <i class="fa-solid fa-camera-retro me-1"></i> Multimodal OCR Attachments (Images, Docs, PDFs)
                   </label>
-                  <span id="ocrStatusBadge" class="badge bg-light text-muted border small">Supports PNG, JPG, PDF, DOCX</span>
-                </div>
-                <div class="input-group">
-                  <input type="file" class="form-control rounded-3" id="ocrAttachmentFile" accept="image/*,.pdf,.docx,.txt" onchange="handleOcrAttachment(this)">
-                  <button type="button" id="ocrExtractBtn" class="btn btn-teal rounded-3 px-3" onclick="triggerOcrExtraction()">
-                    <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Extract with Gemini Vision
+                  <button type="button" class="btn btn-sm btn-outline-teal rounded-pill px-2 py-1" onclick="addOcrFileRow('ocrFilesContainer')" title="Add another document">
+                    <i class="fa-solid fa-plus me-1"></i> Add Doc
                   </button>
                 </div>
-                <div class="form-text small">Attach business cards, brochures, pitch deck PDFs, or screenshots. Gemini extracts facts and auto-fills fields below.</div>
+                <div id="ocrFilesContainer" class="d-flex flex-column gap-2 mb-2">
+                  <div class="input-group ocr-file-row">
+                    <input type="file" class="form-control rounded-3 ocr-file-input" accept="image/*,.pdf,.docx,.txt" onchange="handleOcrAttachment(this)">
+                    <button type="button" class="btn btn-outline-danger rounded-3" onclick="removeOcrFileRow(this)" title="Remove" style="display: none;">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center justify-content-between pt-1 gap-2">
+                  <span id="ocrStatusBadge" class="badge bg-white text-muted border small">Supports PNG, JPG, PDF, DOCX</span>
+                  <button type="button" id="ocrExtractBtn" class="btn btn-teal rounded-pill px-3 py-1" onclick="triggerOcrExtraction()">
+                    <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Extract All with Gemini Vision
+                  </button>
+                </div>
+                <div class="form-text small mt-1">Attach business cards, brochures, pitch deck PDFs, or screenshots. Gemini extracts facts and auto-fills fields below.</div>
               </div>
 
               <div class="row g-3 mb-3">
@@ -312,18 +322,30 @@
                 </div>
               </div>
 
-              <!-- 2. LinkedIn Post URLs Box -->
+              <!-- 2. LinkedIn Post URLs Box (with + icon for multiple posts) -->
               <div class="mb-3">
-                <label class="form-label fw-semibold small text-dark">
-                  <i class="fa-brands fa-linkedin text-primary me-1"></i> LinkedIn Post URLs (Optional Analysis)
-                </label>
-                <div class="input-group">
-                  <input type="url" class="form-control rounded-3" id="manualLinkedinUrl" placeholder="https://www.linkedin.com/posts/executive-announcement-12345">
-                  <button type="button" class="btn btn-outline-secondary rounded-3" onclick="analyzeLinkedInPostQuick()">
-                    <i class="fa-solid fa-chart-line me-1"></i> Analyze Post
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                  <label class="form-label fw-semibold small text-dark mb-0">
+                    <i class="fa-brands fa-linkedin text-primary me-1"></i> LinkedIn Post URLs (Optional Analysis)
+                  </label>
+                  <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2 py-1" onclick="addLinkedInUrlRow('manualLinkedinUrlsContainer')" title="Add another LinkedIn link">
+                    <i class="fa-solid fa-plus me-1"></i> Add Post Link
                   </button>
                 </div>
-                <div class="form-text small">Our agent summarizes recent executive posts and vectorizes key announcements.</div>
+                <div id="manualLinkedinUrlsContainer" class="d-flex flex-column gap-2 mb-2">
+                  <div class="input-group linkedin-url-row">
+                    <input type="url" class="form-control rounded-3 manual-linkedin-input" placeholder="https://www.linkedin.com/posts/executive-announcement-12345">
+                    <button type="button" class="btn btn-outline-primary rounded-3" onclick="addLinkedInUrlRow('manualLinkedinUrlsContainer')" title="Add another link">
+                      <i class="fa-solid fa-plus"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="d-flex justify-content-end">
+                  <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="analyzeLinkedInPostQuick()">
+                    <i class="fa-solid fa-chart-line me-1"></i> Analyze All LinkedIn Posts
+                  </button>
+                </div>
+                <div class="form-text small">Our agent summarizes executive posts and vectorizes key announcements into ChromaDB.</div>
               </div>
 
               <div class="mb-3">

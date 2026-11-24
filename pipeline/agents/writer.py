@@ -68,26 +68,33 @@ def draft_email(
     company_instruction = ""
     if company_context and company_context.strip():
         company_instruction = (
-            f"\nOur Company Value Proposition & Services:\n{company_context.strip()}\n"
-            f"- In Sentence 2, connect our capability directly to solving their pain point ({primary_pain_point}).\n"
+            f"\nOur Company Value Proposition & Capabilities:\n{company_context.strip()}\n"
+            f"- Connect our specific enterprise solution directly to resolving their core pain point ({primary_pain_point}).\n"
         )
 
     prompt = (
-        f"You are a top-performing SDR. Write a cold email.\n"
-        f"- Sentence 1 MUST reference this recent news: {research.recent_news}.\n"
-        f"- Sentence 2 MUST address this pain point: {primary_pain_point}.\n"
-        f"{company_instruction}"
-        f"- Sentence 3 must be a soft call-to-action.\n"
-        f"Do not use generic corporate jargon. Keep it under 75 words. "
-        f"Extract the factual claims you used. Return ONLY JSON matching the WriterOutput schema.\n\n"
+        f"You are an enterprise SDR writing an end-to-end, high-converting, professional, formal sales outreach email.\n\n"
+        f"Target Prospect Context & Signals:\n"
+        f"- Recent News / Milestones: {research.recent_news}\n"
+        f"- Primary Pain Point: {primary_pain_point}\n"
+        f"- Context: {context}\n"
+        f"{company_instruction}\n"
+        f"Draft a complete, end-to-end formal B2B email with the following clear structure:\n"
+        f"1. Formal Salutation: (e.g. 'Dear [Contact Name],' or 'Dear [Company] Leadership Team,')\n"
+        f"2. Contextual Opening: Acknowledge their recent milestone, corporate expansion, or industry focus ({primary_news}).\n"
+        f"3. Value Proposition: Articulate how our solution eliminates operational bottlenecks and directly solves {primary_pain_point}.\n"
+        f"4. Concrete Impact: Provide a clear value proposition or metric (e.g. accelerating outbound efficiency, reducing manual overhead).\n"
+        f"5. Professional Call to Action (CTA): Politely propose a brief 10-minute introductory conversation next week.\n"
+        f"6. Formal Sign-off: 'Best regards,\\n[Your Name]\\nBizCorp AI Sales Outreach Team'\n\n"
+        f"Extract the specific factual claims used into the 'claims_used' array.\n"
+        f"Return ONLY strictly valid JSON matching the WriterOutput schema.\n\n"
         f"Schema:\n{schema_str}\n\n"
-        f"Verified Context:\n{context}\n\n"
         f"JSON Output:"
     )
 
     system_prompt = (
-        "You are a top-performing sales development representative. "
-        "Draft concise 3-sentence cold emails with exact factual grounding. "
+        "You are an executive enterprise sales professional. "
+        "Draft complete, polished, formal B2B sales emails grounded strictly in verified context facts. "
         "Always respond with strictly valid JSON matching the schema."
     )
 
@@ -102,12 +109,19 @@ def draft_email(
         return WriterOutput.model_validate(data)
     except Exception:
         # Fallback in case of parsing anomaly
-        s1 = f"I saw that {primary_news}."
-        s2 = f"We help leaders solve {primary_pain_point} without disrupting existing workflows."
-        s3 = "Would you be open to a 10-minute chat this Thursday to explore this?"
-        body = f"{s1} {s2} {s3}"
+        body = (
+            f"Dear Leadership Team,\n\n"
+            f"I have been following your team's strategic trajectory and noted that {primary_news}.\n\n"
+            f"Many fast-growing enterprise organizations face challenges when trying to solve {primary_pain_point} "
+            f"while scaling operations. Our automated AI intelligence platform is purpose-built to streamline research, "
+            f"eliminate manual overhead, and accelerate high-converting outbound pipelines.\n\n"
+            f"Would you be open to a brief 10-minute introductory conversation this Thursday to explore how this can support your growth targets?\n\n"
+            f"Best regards,\n"
+            f"Enterprise Outreach Team\n"
+            f"BizCorp AI"
+        )
         return WriterOutput(
-            subject=f"Idea regarding {primary_news[:30]}",
+            subject=f"Strategic Initiative: Addressing {primary_pain_point} at Scale",
             body=body,
             claims_used=[primary_news, primary_pain_point],
         )

@@ -89,12 +89,12 @@ def search_lead_context(lead_id: Any, query: str, top_k: int = 5) -> str:
     namespace = f"lead_{lead_id}"
     try:
         vs = get_vector_store(namespace=namespace)
-        results = vs.query(query_text=query, top_k=top_k)
+        results = vs.query(text=query, top_k=top_k)
         if results:
-            texts = [r.get("text", "") for r in results if r.get("text")]
+            texts = [getattr(r, "text", getattr(r, "page_content", str(r))) for r in results]
             return "\n\n".join(texts)
     except Exception as e:
-        print(f"[VectorService] Warning: error querying lead context for {namespace}: {e}")
+        logger.warning(f"[VectorService] Note: error querying lead context for {namespace}: {e}")
     return ""
 
 
@@ -106,10 +106,10 @@ def search_company_profile(query: str, top_k: int = 3) -> str:
     namespace = "our_company"
     try:
         vs = get_vector_store(namespace=namespace)
-        results = vs.query(query_text=query, top_k=top_k)
+        results = vs.query(text=query, top_k=top_k)
         if results:
-            texts = [r.get("text", "") for r in results if r.get("text")]
+            texts = [getattr(r, "text", getattr(r, "page_content", str(r))) for r in results]
             return "\n\n".join(texts)
     except Exception as e:
-        print(f"[VectorService] Warning: error querying company profile: {e}")
+        logger.warning(f"[VectorService] Note: error querying company profile: {e}")
     return ""
