@@ -1,284 +1,118 @@
 {% extends "base.html" %}
 {% set active_page = "profile" %}
 
-{% block title %}My Business & Service Catalog{% endblock %}
+{% block title %}Company Profile & AI Knowledge Base{% endblock %}
 
 {% block content %}
-<!-- Page Header -->
 <div class="d-flex flex-wrap align-items-center justify-content-between mb-4" data-aos="fade-down">
   <div>
-    <h1 class="font-heading fs-2 fw-bold mb-1">My Business & Service Offerings</h1>
-    <p class="text-muted small mb-0">Configure your company identity, core value propositions, and service catalog to ground outbound proposals.</p>
-  </div>
-  <div class="d-flex align-items-center gap-2">
-    <button class="btn btn-teal btn-pill px-4 py-2" data-bs-toggle="modal" data-bs-target="#addServiceModal">
-      <i class="fa-solid fa-plus me-1"></i> Add Service
-    </button>
+    <h1 class="font-heading fs-2 fw-bold mb-1">Company Profile & Knowledge Base</h1>
+    <p class="text-muted small mb-0">Define your value proposition, case studies, and offerings to guide AI outreach agents.</p>
   </div>
 </div>
 
-<!-- ──────────────── 2-COLUMN GRID ──────────────── -->
-<div class="row g-4 mb-4" data-aos="fade-up">
-
-  <!-- LEFT: Company Profile Form -->
-  <div class="col-lg-5">
-    <div class="saas-card h-100 d-flex flex-column justify-content-between">
-      <div>
-        <div class="d-flex align-items-center gap-2 mb-3 border-bottom pb-3">
-          <div class="rounded-circle d-flex align-items-center justify-content-center text-teal" 
-               style="width: 38px; height: 38px; background: var(--soft-mint);">
-            <i class="fa-solid fa-building-user"></i>
-          </div>
-          <div>
-            <h2 class="font-heading fs-5 fw-bold mb-0">Company Profile</h2>
-            <small class="text-muted">Used by AI as sender identity</small>
-          </div>
+<div class="row g-4" data-aos="fade-up">
+  <!-- Left Column: Company Profile Form -->
+  <div class="col-lg-8">
+    <div class="saas-card">
+      <div class="d-flex align-items-center justify-content-between border-bottom pb-3 mb-4">
+        <div>
+          <h3 class="font-heading fs-4 fw-bold mb-1">Our Value Proposition & Pitch</h3>
+          <p class="text-muted small mb-0">These details are converted into semantic vector embeddings for RAG email generation.</p>
         </div>
-
-        <form id="companyProfileForm" onsubmit="handleSaveCompanyProfile(event)">
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Company Name <span class="text-danger">*</span></label>
-            <input type="text" id="profName" class="form-control" value="{{ company.name or '' }}" placeholder="e.g. CognitiveReach AI" required>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Industry Sector</label>
-            <input type="text" id="profIndustry" class="form-control" value="{{ company.industry or '' }}" placeholder="e.g. Enterprise B2B SaaS & AI Automation">
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Primary Value Proposition</label>
-            <textarea id="profValueProp" class="form-control" rows="4" 
-                      placeholder="Explain how your solution solves customer pain points...">{{ company.value_proposition or '' }}</textarea>
-            <small class="text-muted">Injected as the primary thesis during proposal generation.</small>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Case Studies / Proof Points</label>
-            <textarea id="profCaseStudies" class="form-control" rows="3" 
-                      placeholder="e.g. Helped 40+ SaaS teams scale SDR outbound meetings by 240%...">{{ company.case_studies or '' }}</textarea>
-          </div>
-
-          <button type="submit" id="saveProfileBtn" class="btn btn-teal btn-pill px-4 py-2 w-100 shadow-sm">
-            <i class="fa-solid fa-floppy-disk me-1"></i> Save Profile
-          </button>
-        </form>
-      </div>
-
-      <div class="pt-3 border-top mt-3 text-muted small">
-        <i class="fa-solid fa-shield-halved text-success me-1"></i> Profile values form the verified bedrock for multi-agent synthesis.
-      </div>
-    </div>
-  </div>
-
-  <!-- RIGHT: Service Catalog Dynamic Table -->
-  <div class="col-lg-7">
-    <div class="saas-card h-100 d-flex flex-column justify-content-between">
-      <div>
-        <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-3">
-          <div class="d-flex align-items-center gap-2">
-            <div class="rounded-circle d-flex align-items-center justify-content-center text-teal" 
-                 style="width: 38px; height: 38px; background: var(--soft-mint);">
-              <i class="fa-solid fa-list-check"></i>
-            </div>
-            <div>
-              <h2 class="font-heading fs-5 fw-bold mb-0">Service Catalog</h2>
-              <small class="text-muted">Products and solutions available for pitch generation</small>
-            </div>
-          </div>
-          <button class="btn btn-sm btn-outline-teal btn-pill px-3" data-bs-toggle="modal" data-bs-target="#addServiceModal">
-            <i class="fa-solid fa-plus me-1"></i> Add Service
-          </button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="table-saas align-middle" id="servicesTable">
-            <thead>
-              <tr>
-                <th>Service / Offering</th>
-                <th>Category</th>
-                <th>Description</th>
-                <th class="text-end">Action</th>
-              </tr>
-            </thead>
-            <tbody id="servicesTableBody">
-              {% if services and services|length > 0 %}
-                {% for svc in services %}
-                <tr id="service-row-{{ loop.index0 }}">
-                  <td>
-                    <div class="fw-bold text-dark">{{ svc.name }}</div>
-                  </td>
-                  <td>
-                    <span class="badge-pill-custom badge-teal">{{ svc.category or 'Core' }}</span>
-                  </td>
-                  <td>
-                    <div class="small text-muted" style="max-width: 280px;">{{ svc.description or '—' }}</div>
-                  </td>
-                  <td class="text-end">
-                    <button type="button" class="btn btn-sm btn-light text-danger btn-pill px-2 py-1" onclick="handleDeleteService({{ loop.index0 }})" title="Delete Service">
-                      <i class="fa-solid fa-trash-can"></i>
-                    </button>
-                  </td>
-                </tr>
-                {% endfor %}
-              {% else %}
-                <tr id="emptyServicesRow">
-                  <td colspan="4" class="text-center py-4 text-muted">
-                    <i class="fa-solid fa-boxes-packing fs-2 text-secondary mb-2 d-block"></i>
-                    No services added yet. Click "+ Add Service" to define your product catalog.
-                  </td>
-                </tr>
-              {% endif %}
-            </tbody>
-          </table>
+        <div class="kpi-icon-circle" style="width: 44px; height: 44px; font-size: 1.1rem;">
+          <i class="fa-solid fa-bullseye"></i>
         </div>
       </div>
 
-      <div class="pt-3 border-top mt-3 text-muted small d-flex align-items-center justify-content-between">
-        <span>Total Offerings: <strong class="text-dark">{{ services|length }}</strong></span>
-        <span><i class="fa-solid fa-circle-check text-success me-1"></i> Grounded in proposal generator</span>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ──────────────── MODAL: ADD SERVICE ──────────────── -->
-<div class="modal fade" id="addServiceModal" tabindex="-1" aria-labelledby="addServiceModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content border-0 shadow-lg rounded-4">
-      <div class="modal-header border-bottom pb-3" style="background: var(--bg-light);">
-        <h5 class="modal-title font-heading fw-bold" id="addServiceModalLabel">
-          <i class="fa-solid fa-circle-plus text-teal me-2"></i> Add Service / Offering
-        </h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <form id="addServiceForm" onsubmit="handleAddServiceSubmit(event)">
-        <div class="modal-body p-4">
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Service Name <span class="text-danger">*</span></label>
-            <input type="text" id="svcName" class="form-control" placeholder="e.g. Multi-Agent Lead Enrichment" required>
+      <form id="companyProfileForm" onsubmit="handleCompanyProfileSubmit(event)">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small text-dark">Company Name</label>
+            <input type="text" class="form-control rounded-3" id="companyName" value="{{ company.name or '' }}" required placeholder="e.g. CognitiveReach AI">
           </div>
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Category</label>
-            <input type="text" id="svcCategory" class="form-control" placeholder="e.g. Core Platform, AI Automation, Consulting" value="Core Platform">
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-bold small text-dark">Description</label>
-            <textarea id="svcDescription" class="form-control" rows="3" placeholder="Explain what this offering accomplishes for enterprise clients..."></textarea>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold small text-dark">Industry / Market Vertical</label>
+            <input type="text" class="form-control rounded-3" id="companyIndustry" value="{{ company.industry or '' }}" placeholder="e.g. Enterprise B2B SaaS">
           </div>
         </div>
-        <div class="modal-footer border-top pt-3">
-          <button type="button" class="btn btn-outline-secondary btn-pill px-4" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" id="saveServiceBtn" class="btn btn-teal btn-pill px-4">
-            <i class="fa-solid fa-plus me-1"></i> Add to Catalog
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold small text-dark">Core Value Proposition</label>
+          <textarea class="form-control rounded-3" id="valueProposition" rows="3" placeholder="What distinct value do you deliver to target accounts?">{{ company.value_proposition or '' }}</textarea>
+          <div class="form-text small">Used by the AI Writer agent to formulate your primary hook.</div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold small text-dark">Products & Services Offered</label>
+          <textarea class="form-control rounded-3" id="servicesOffered" rows="3" placeholder="List core offerings and key features...">{{ company.services_offered or '' }}</textarea>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-semibold small text-dark">Customer Case Studies & Verified Metrics</label>
+          <textarea class="form-control rounded-3" id="caseStudies" rows="3" placeholder="Quantifiable outcomes (e.g., 'Boosted conversion rates by 240% for SaaS clients')...">{{ company.case_studies or '' }}</textarea>
+          <div class="form-text small">Metrics cited by the Writer Agent are strictly verified by the Evaluator Agent against this field.</div>
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between pt-3 border-top">
+          <span class="text-muted small">
+            <i class="fa-solid fa-clock-rotate-left me-1"></i> Last updated: {{ company.updated_at.strftime('%b %d, %Y %H:%M') if company.updated_at else 'Initial setup' }}
+          </span>
+          <button type="submit" id="saveCompanyBtn" class="btn btn-teal btn-pill px-4 py-2 fs-6">
+            <i class="fa-solid fa-cloud-arrow-up me-1"></i> Save & Sync to AI
           </button>
         </div>
       </form>
     </div>
   </div>
+
+  <!-- Right Column: User Settings & Vector Stats -->
+  <div class="col-lg-4">
+    <!-- User Settings Card -->
+    <div class="saas-card mb-4">
+      <div class="d-flex align-items-center gap-3 mb-3 border-bottom pb-3">
+        <div class="user-avatar-circle" style="width: 50px; height: 50px; font-size: 1.2rem;">
+          {{ (session.get('user_name', 'Admin')[:2]).upper() }}
+        </div>
+        <div>
+          <div class="fw-bold fs-5 text-dark">{{ session.get('user_name', 'Sales Admin') }}</div>
+          <span class="text-muted small">{{ session.get('user_email', 'admin@cognitivereach.ai') }}</span>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Account Role</label>
+        <div class="fw-semibold text-dark">Enterprise SDR Administrator</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Database Mode</label>
+        <span class="badge bg-success-subtle text-success px-3 py-1 rounded-pill">
+          <i class="fa-solid fa-server me-1"></i> MySQL (Encrypted at Rest)
+        </span>
+      </div>
+
+      <div class="mb-3">
+        <label class="text-muted small d-block mb-1">Vector Storage</label>
+        <span class="badge bg-primary-subtle text-primary px-3 py-1 rounded-pill">
+          <i class="fa-solid fa-vector-square me-1"></i> ChromaDB (Cosine Space)
+        </span>
+      </div>
+    </div>
+
+    <!-- How RAG Works Card -->
+    <div class="saas-card bg-light border">
+      <h4 class="font-heading fs-5 fw-bold mb-3 text-navy" style="color: #1B264F;">
+        <i class="fa-solid fa-lightbulb text-teal me-1" style="color: #00B4A0;"></i> How AI Context Works
+      </h4>
+      <p class="text-muted small lh-base mb-3">
+        When you click <strong>Save & Sync</strong>, your pitch is embedded via sentence transformers into ChromaDB.
+      </p>
+      <ul class="text-muted small ps-3 mb-0 lh-lg">
+        <li>The <strong>AI Writer</strong> matches the prospect's pain points against your value proposition.</li>
+        <li>The <strong>AI Evaluator</strong> cross-examines case study statistics to block hallucinations.</li>
+      </ul>
+    </div>
+  </div>
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-async function handleSaveCompanyProfile(event) {
-  event.preventDefault();
-  const btn = document.getElementById("saveProfileBtn");
-  const name = document.getElementById("profName").value.trim();
-  const industry = document.getElementById("profIndustry").value.trim();
-  const value_proposition = document.getElementById("profValueProp").value.trim();
-  const case_studies = document.getElementById("profCaseStudies").value.trim();
-
-  if (!name) {
-    showToast("Company name is required.", true);
-    return;
-  }
-
-  setButtonLoading(btn, true, "Saving Profile...");
-  try {
-    const res = await fetch("/api/company", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, industry, value_proposition, case_studies })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || "Failed to save profile.");
-
-    Swal.fire({
-      title: "Profile Updated!",
-      text: "Your business identity and value propositions have been saved.",
-      icon: "success",
-      confirmButtonColor: "#00B4A0"
-    });
-  } catch (err) {
-    showToast(err.message, true);
-  } finally {
-    setButtonLoading(btn, false);
-  }
-}
-
-async function handleAddServiceSubmit(event) {
-  event.preventDefault();
-  const btn = document.getElementById("saveServiceBtn");
-  const name = document.getElementById("svcName").value.trim();
-  const category = document.getElementById("svcCategory").value.trim();
-  const description = document.getElementById("svcDescription").value.trim();
-
-  if (!name) {
-    showToast("Please enter a service name.", true);
-    return;
-  }
-
-  setButtonLoading(btn, true, "Adding...");
-  try {
-    const res = await fetch("/api/company/services", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, category, description })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || "Failed to add service.");
-
-    Swal.fire({
-      title: "Service Added!",
-      text: `${name} has been added to your catalog.`,
-      icon: "success",
-      confirmButtonColor: "#00B4A0"
-    }).then(() => {
-      window.location.reload();
-    });
-  } catch (err) {
-    showToast(err.message, true);
-  } finally {
-    setButtonLoading(btn, false);
-  }
-}
-
-async function handleDeleteService(serviceIdx) {
-  const result = await Swal.fire({
-    title: "Delete Service?",
-    text: "Are you sure you want to remove this service from your catalog?",
-    icon: "warning",
-    showCancelButton: true,
-    confirmButtonColor: "#EF4444",
-    cancelButtonColor: "#64748B",
-    confirmButtonText: "Yes, delete"
-  });
-
-  if (!result.isConfirmed) return;
-
-  try {
-    const res = await fetch(`/api/company/services/${serviceIdx}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || "Failed to delete service.");
-
-    showToast("Service removed from catalog.");
-    const row = document.getElementById(`service-row-${serviceIdx}`);
-    if (row) row.remove();
-  } catch (err) {
-    showToast(err.message, true);
-  }
-}
-</script>
 {% endblock %}
