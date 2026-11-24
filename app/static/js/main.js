@@ -403,8 +403,19 @@ async function sendEmailSMTP(leadId) {
   const btn = document.getElementById('sendEmailBtn');
   const subjectEl = document.getElementById('emailSubject') || document.getElementById('output-subject');
   const bodyEl = document.getElementById('emailBody') || document.getElementById('output-body');
+  const recipientEl = document.getElementById('recipient-email') || document.getElementById('workspace-recipient-email');
+  const senderEl = document.getElementById('sender-mailbox');
+
   const subject = (subjectEl ? (subjectEl.value !== undefined ? subjectEl.value : subjectEl.textContent) : '').trim();
   const body = (bodyEl ? (bodyEl.value !== undefined ? bodyEl.value : bodyEl.textContent) : '').trim();
+  const recipientEmail = recipientEl ? recipientEl.value.trim() : '';
+  const senderMailbox = senderEl ? senderEl.value.trim() : '';
+
+  if (!recipientEmail || !recipientEmail.includes('@')) {
+    showToast('Please enter a valid recipient email address.', true);
+    if (recipientEl) recipientEl.focus();
+    return;
+  }
 
   if (!subject || !body) {
     showToast('Subject and Body cannot be empty.', true);
@@ -416,14 +427,19 @@ async function sendEmailSMTP(leadId) {
     const res = await fetch(`/api/leads/${leadId}/send-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subject, body })
+      body: JSON.stringify({
+        subject,
+        body,
+        email: recipientEmail,
+        sender_mailbox: senderMailbox
+      })
     });
     const data = await res.json();
     if (!res.ok || !data.success) throw new Error(data.error || 'SMTP dispatch failed.');
 
     showModalAlert(
       'Email Dispatched!',
-      `Personalized outreach was successfully sent to the lead via SMTP.`,
+      `Personalized outreach was successfully sent to ${recipientEmail} via SMTP.`,
       'success'
     );
 
@@ -788,5 +804,393 @@ async function analyzeWorkspaceLinkedIn(leadId) {
     showToast(`Analyzed ${data.total_analyzed || urls.length} LinkedIn post(s) & synced to ChromaDB!`);
   } catch (err) {
     showToast(err.message, true);
+  }
+}
+
+// ──────────────── 6. Prospect Delete, Archive, and Recipient Email Management ────────────────
+
+async function deleteLead(leadId, companyName, redirectToList = false) {
+  const result = await Swal.fire({
+    title: 'Delete Prospect?',
+    text: `Are you sure you want to delete "${companyName}"? This will permanently remove this prospect, all associated research context, and outreach mail logs.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#EF4444',
+    cancelButtonColor: '#64748B',
+    confirmButtonText: 'Yes, Delete Prospect',
+    cancelButtonText: 'Cancel',
+    customClass: {
+      popup: 'rounded-4 shadow-lg',
+      confirmButton: 'btn btn-danger rounded-pill px-4 me-2',
+      cancelButton: 'btn btn-light rounded-pill px-4'
+    }
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete prospect.');
+
+    showToast(`Prospect "${companyName}" deleted successfully.`);
+
+    if (redirectToList) {
+      setTimeout(() => {
+        window.location.href = '/leads';
+      }, 700);
+    } else {
+      const row = document.getElementById(`lead-row-${leadId}`);
+      if (row) {
+        row.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        row.style.opacity = '0';
+        row.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+          row.remove();
+          updateProspectCounts();
+        }, 400);
+      }
+    }
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+async function toggleArchiveLead(leadId, shouldArchive) {
+  const action = shouldArchive ? 'archive' : 'unarchive';
+  try {
+    const res = await fetch(`/api/leads/${leadId}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || `Failed to ${action} prospect.`);
+
+    showToast(data.message || `Prospect ${action}d successfully.`);
+
+    const row = document.getElementById(`lead-row-${leadId}`);
+    if (row) {
+      row.setAttribute('data-archived', shouldArchive ? 'true' : 'false');
+      // Reload row or page to reflect updated action buttons and badge
+      setTimeout(() => {
+        window.location.reload();
+      }, 600);
+    } else {
+      setTimeout(() => {
+        window.location.reload();
+      }, 600);
+    }
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+function updateProspectCounts() {
+  const rows = document.querySelectorAll('#leadsTableBody tr[data-archived]');
+  let total = 0, active = 0, archived = 0;
+  rows.forEach(r => {
+    total++;
+    if (r.getAttribute('data-archived') === 'true') archived++;
+    else active++;
+  });
+  const countAll = document.getElementById('countAll');
+  const countActive = document.getElementById('countActive');
+  const countArchived = document.getElementById('countArchived');
+  const leadsCountSpan = document.getElementById('leadsCountSpan');
+  if (countAll) countAll.textContent = total;
+  if (countActive) countActive.textContent = active;
+  if (countArchived) countArchived.textContent = archived;
+  if (leadsCountSpan) leadsCountSpan.textContent = total;
+}
+
+function filterProspectsTable(filterType, tabBtn) {
+  const tabs = document.querySelectorAll('#prospectFilterTabs .nav-link');
+  tabs.forEach(t => t.classList.remove('active'));
+  if (tabBtn) tabBtn.classList.add('active');
+
+  const rows = document.querySelectorAll('#leadsTableBody tr[data-archived]');
+  rows.forEach(row => {
+    const isArchived = row.getAttribute('data-archived') === 'true';
+    if (filterType === 'all') {
+      row.classList.remove('d-none');
+    } else if (filterType === 'active') {
+      row.classList.toggle('d-none', isArchived);
+    } else if (filterType === 'archived') {
+      row.classList.toggle('d-none', !isArchived);
+    }
+  });
+}
+
+function searchProspectsTable(query) {
+  const q = (query || '').toLowerCase().trim();
+  const rows = document.querySelectorAll('#leadsTableBody tr[data-archived]');
+  rows.forEach(row => {
+    const comp = row.getAttribute('data-company') || '';
+    const contact = row.getAttribute('data-contact') || '';
+    const email = row.getAttribute('data-email') || '';
+    const matches = !q || comp.includes(q) || contact.includes(q) || email.includes(q);
+    row.classList.toggle('d-none', !matches);
+  });
+}
+
+function openEditLeadModal(leadId, companyName, contactName, email, website, status) {
+  const idEl = document.getElementById('editLeadId');
+  const compEl = document.getElementById('editCompanyName');
+  const contactEl = document.getElementById('editContactName');
+  const emailEl = document.getElementById('editEmail');
+  const webEl = document.getElementById('editWebsite');
+  const statusEl = document.getElementById('editStatus');
+
+  if (idEl) idEl.value = leadId || '';
+  if (compEl) compEl.value = companyName || '';
+  if (contactEl) contactEl.value = contactName || '';
+  if (emailEl) emailEl.value = email || '';
+  if (webEl) webEl.value = website || '';
+  if (statusEl) statusEl.value = status || 'Pending';
+
+  const modalEl = document.getElementById('editLeadModal');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modal.show();
+  }
+}
+
+async function handleEditLeadSubmit(event) {
+  event.preventDefault();
+  const leadId = document.getElementById('editLeadId')?.value;
+  if (!leadId) return;
+
+  const btn = document.getElementById('saveEditLeadBtn');
+  const company_name = document.getElementById('editCompanyName')?.value.trim();
+  const contact_name = document.getElementById('editContactName')?.value.trim();
+  const email = document.getElementById('editEmail')?.value.trim();
+  const website_url = document.getElementById('editWebsite')?.value.trim();
+  const status = document.getElementById('editStatus')?.value;
+
+  if (!company_name) {
+    showToast('Company Name is required.', true);
+    return;
+  }
+
+  setButtonLoading(btn, true, 'Saving...');
+  try {
+    const res = await fetch(`/api/leads/${leadId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_name, contact_name, email, website_url, status })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to update prospect.');
+
+    showToast('Prospect and recipient email updated successfully!');
+    const modalEl = document.getElementById('editLeadModal');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      modal.hide();
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 700);
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function saveRecipientEmail(leadId) {
+  const recipientEl = document.getElementById('recipient-email') || document.getElementById('workspace-recipient-email');
+  const email = recipientEl ? recipientEl.value.trim() : '';
+
+  if (!email || !email.includes('@')) {
+    showToast('Please enter a valid recipient email address.', true);
+    if (recipientEl) recipientEl.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save recipient email.');
+
+    syncWorkspaceEmail(email);
+    syncBottomEmail(email);
+    showToast(`Recipient email saved to prospect profile: ${email}`);
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+function syncWorkspaceEmail(val) {
+  const bottomEl = document.getElementById('recipient-email');
+  if (bottomEl && bottomEl.value !== val) bottomEl.value = val;
+}
+
+function syncBottomEmail(val) {
+  const topEl = document.getElementById('workspace-recipient-email');
+  if (topEl && topEl.value !== val) topEl.value = val;
+}
+
+// ──────────────── 7. Mailbox Configuration & Dynamic SMTP Editing ────────────────
+
+function openMailboxSettingsModal() {
+  const modalEl = document.getElementById('editMailboxModal');
+  if (modalEl) {
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modal.show();
+    loadMailboxSettings();
+  }
+}
+
+async function loadMailboxSettings() {
+  const statusEl = document.getElementById('mailboxTestStatus');
+  if (statusEl) statusEl.innerHTML = '';
+
+  try {
+    const res = await fetch('/api/mailbox');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.success || !data.mailbox) return;
+
+    const mb = data.mailbox;
+    const nameEl = document.getElementById('mbSenderName');
+    const emailEl = document.getElementById('mbSenderEmail');
+    const hostEl = document.getElementById('mbSmtpHost');
+    const portEl = document.getElementById('mbSmtpPort');
+    const userEl = document.getElementById('mbSmtpUser');
+    const tlsEl = document.getElementById('mbUseTls');
+
+    if (nameEl) nameEl.value = mb.sender_name || '';
+    if (emailEl) emailEl.value = mb.sender_email || '';
+    if (hostEl) hostEl.value = mb.smtp_host || 'smtp.gmail.com';
+    if (portEl) portEl.value = mb.smtp_port || 587;
+    if (userEl) userEl.value = mb.smtp_user || mb.sender_email || '';
+    if (tlsEl) tlsEl.checked = mb.use_tls !== false;
+  } catch (err) {
+    console.warn('Could not load mailbox settings:', err);
+  }
+}
+
+async function handleSaveMailbox(event) {
+  event.preventDefault();
+  const btn = document.getElementById('saveMailboxBtn');
+  const sender_name = document.getElementById('mbSenderName')?.value.trim();
+  const sender_email = document.getElementById('mbSenderEmail')?.value.trim();
+  const smtp_host = document.getElementById('mbSmtpHost')?.value.trim();
+  const smtp_port = document.getElementById('mbSmtpPort')?.value;
+  const smtp_user = document.getElementById('mbSmtpUser')?.value.trim();
+  const smtp_pass = document.getElementById('mbSmtpPass')?.value.trim();
+  const use_tls = document.getElementById('mbUseTls')?.checked;
+
+  if (!sender_email || !sender_email.includes('@')) {
+    showToast('Please provide a valid sender email address.', true);
+    return;
+  }
+
+  setButtonLoading(btn, true, 'Saving Mailbox...');
+  try {
+    const res = await fetch('/api/mailbox', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender_name,
+        sender_email,
+        smtp_host,
+        smtp_port,
+        smtp_user,
+        smtp_pass,
+        use_tls
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Failed to save mailbox settings.');
+
+    showToast('Mailbox settings saved successfully!');
+
+    // Update sender-mailbox input on workspace if present
+    const workspaceSenderEl = document.getElementById('sender-mailbox');
+    if (workspaceSenderEl) {
+      workspaceSenderEl.value = sender_email;
+    }
+
+    const modalEl = document.getElementById('editMailboxModal');
+    if (modalEl) {
+      const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+      modal.hide();
+    }
+  } catch (err) {
+    showToast(err.message, true);
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function testMailboxConnection() {
+  const statusEl = document.getElementById('mailboxTestStatus');
+  const smtp_host = document.getElementById('mbSmtpHost')?.value.trim();
+  const smtp_port = document.getElementById('mbSmtpPort')?.value;
+  const smtp_user = document.getElementById('mbSmtpUser')?.value.trim();
+  const smtp_pass = document.getElementById('mbSmtpPass')?.value.trim();
+  const use_tls = document.getElementById('mbUseTls')?.checked;
+
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="spinner-border spinner-border-sm me-1 text-teal"></span> Connecting to ${smtp_host || 'SMTP'}...`;
+  }
+
+  try {
+    const res = await fetch('/api/mailbox/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        smtp_host,
+        smtp_port,
+        smtp_user,
+        smtp_pass,
+        use_tls
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="badge bg-success-subtle text-success border border-success p-2 w-100 text-start"><i class="fa-solid fa-circle-check me-1"></i> ${data.message}</span>`;
+      }
+      showToast('SMTP Mailbox authenticated successfully!');
+    } else {
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="badge bg-danger-subtle text-danger border border-danger p-2 w-100 text-start"><i class="fa-solid fa-circle-xmark me-1"></i> ${data.message || 'Connection failed'}</span>`;
+      }
+      showToast(data.message || 'SMTP Authentication failed', true);
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="badge bg-danger-subtle text-danger border border-danger p-2 w-100 text-start"><i class="fa-solid fa-circle-xmark me-1"></i> ${err.message}</span>`;
+    }
+    showToast(err.message, true);
+  }
+}
+
+function togglePasswordVisibility(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const icon = btn.querySelector('i');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    if (icon) {
+      icon.classList.remove('fa-eye');
+      icon.classList.add('fa-eye-slash');
+    }
+  } else {
+    inp.type = 'password';
+    if (icon) {
+      icon.classList.remove('fa-eye-slash');
+      icon.classList.add('fa-eye');
+    }
   }
 }

@@ -180,35 +180,102 @@ def create_lead():
 @leads_bp.route("/<int:lead_id>", methods=["DELETE"])
 def delete_lead(lead_id: int):
     """Deletes a lead and its associated contexts and emails."""
-    lead = Lead.query.get(lead_id)
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
     if not lead:
         return jsonify({"success": False, "error": "Lead not found."}), 404
 
     try:
+        company_name = lead.company_name
         db.session.delete(lead)
         db.session.commit()
-        return jsonify({"success": True, "message": "Lead deleted successfully."}), 200
+        return jsonify({
+            "success": True,
+            "message": f"Prospect '{company_name}' deleted successfully."
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@leads_bp.route("/<int:lead_id>", methods=["PUT"])
+@leads_bp.route("/<int:lead_id>/archive", methods=["POST", "PATCH"])
+def archive_lead(lead_id: int):
+    """Archives a lead/prospect and marks status as Archived."""
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
+    if not lead:
+        return jsonify({"success": False, "error": "Lead not found."}), 404
+
+    try:
+        lead.is_archived = True
+        try:
+            lead.status = "Archived"
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
+            lead.is_archived = True
+            db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Prospect '{lead.company_name}' archived.",
+            "lead": lead.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@leads_bp.route("/<int:lead_id>/unarchive", methods=["POST", "PATCH"])
+def unarchive_lead(lead_id: int):
+    """Unarchives a lead/prospect and restores status to Pending."""
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
+    if not lead:
+        return jsonify({"success": False, "error": "Lead not found."}), 404
+
+    try:
+        lead.is_archived = False
+        lead.status = "Pending"
+        db.session.commit()
+        return jsonify({
+            "success": True,
+            "message": f"Prospect '{lead.company_name}' restored to active pipeline.",
+            "lead": lead.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@leads_bp.route("/<int:lead_id>", methods=["PUT", "PATCH"])
 def update_lead(lead_id: int):
-    """Updates lead contact details or status."""
-    lead = Lead.query.get(lead_id)
+    """Updates lead contact details, recipient email, or status."""
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
     if not lead:
         return jsonify({"success": False, "error": "Lead not found."}), 404
 
     data = request.get_json(force=True, silent=True) or {}
-    lead.company_name = data.get("company_name", lead.company_name)
-    lead.contact_name = data.get("contact_name", lead.contact_name)
-    lead.email = data.get("email", lead.email)
-    lead.website_url = data.get("website_url", lead.website_url)
-    lead.status = data.get("status", lead.status)
+    if "company_name" in data:
+        lead.company_name = data.get("company_name", lead.company_name).strip()
+    if "contact_name" in data:
+        lead.contact_name = data.get("contact_name", lead.contact_name).strip()
+    if "email" in data:
+        new_email = (data.get("email") or "").strip()
+        lead.email = new_email if new_email else None
+    if "website_url" in data:
+        lead.website_url = data.get("website_url", lead.website_url).strip()
+    if "status" in data:
+        lead.status = data.get("status", lead.status).strip()
+    if "is_archived" in data:
+        lead.is_archived = bool(data.get("is_archived"))
+        if lead.is_archived:
+            lead.status = "Archived"
 
     db.session.commit()
-    return jsonify({"success": True, "lead": lead.to_dict()}), 200
+    return jsonify({
+        "success": True,
+        "message": f"Prospect '{lead.company_name}' updated successfully.",
+        "lead": lead.to_dict()
+    }), 200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -779,21 +846,30 @@ def generate_email(lead_id: int):
 def dispatch_email(lead_id: int):
     """
     Sends email draft via SMTP and logs to EmailLog table.
+    Supports manual editing of recipient email and sender mailbox override.
     """
-    lead = Lead.query.get(lead_id)
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
     if not lead:
         return jsonify({"success": False, "error": "Lead not found."}), 404
 
     data = request.get_json(force=True, silent=True) or {}
     subject = data.get("subject", "").strip()
     body = data.get("body", "").strip()
-    recipient_email = data.get("email", lead.email).strip()
+
+    # Recipient email: manually edited from frontend or fallback to lead record
+    recipient_email = (data.get("email") or data.get("recipient_email") or lead.email or "").strip()
+    sender_mailbox = (data.get("sender_mailbox") or data.get("from_email") or "").strip() or None
 
     if not subject or not body:
         return jsonify({"success": False, "error": "Subject and Body are required."}), 400
 
-    if not recipient_email:
-        return jsonify({"success": False, "error": "Lead email address is missing."}), 400
+    if not recipient_email or "@" not in recipient_email:
+        return jsonify({"success": False, "error": "Recipient email address is missing or invalid. Please specify a valid recipient email."}), 400
+
+    # If user provided/edited the recipient email, update lead profile to keep it synced
+    if recipient_email != lead.email:
+        lead.email = recipient_email
+        db.session.commit()
 
     send_res = send_email(
         to_email=recipient_email,
@@ -801,7 +877,8 @@ def dispatch_email(lead_id: int):
         body=body,
         lead_id=lead.id,
         evaluator_score=1.0,
-        evaluator_reasoning="Dispatched via Web UI by user approval."
+        evaluator_reasoning="Dispatched via Web UI by user approval.",
+        sender_email=sender_mailbox
     )
 
     if send_res.get("success"):

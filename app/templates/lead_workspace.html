@@ -22,7 +22,23 @@
     </p>
   </div>
 
-  <div class="d-flex align-items-center gap-3 mt-3 mt-md-0">
+  <div class="d-flex align-items-center gap-2 mt-3 mt-md-0 flex-wrap">
+    <!-- Archive / Unarchive Button -->
+    {% if lead.is_archived %}
+      <button class="btn btn-sm btn-outline-warning rounded-pill px-3 py-2" onclick="toggleArchiveLead({{ lead.id }}, false)">
+        <i class="fa-solid fa-box-open me-1"></i> Restore Prospect
+      </button>
+    {% else %}
+      <button class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-2" onclick="toggleArchiveLead({{ lead.id }}, true)">
+        <i class="fa-solid fa-box-archive me-1"></i> Archive Prospect
+      </button>
+    {% endif %}
+
+    <!-- Delete Prospect Button -->
+    <button class="btn btn-sm btn-outline-danger rounded-pill px-3 py-2" onclick="deleteLead({{ lead.id }}, '{{ lead.company_name|replace('\'', '\\\'') }}', true)">
+      <i class="fa-solid fa-trash-can me-1"></i> Delete Prospect
+    </button>
+
     <span id="leadStatusBadge" class="status-badge {{ lead.status.lower() }}">
       <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i> {{ lead.status }}
     </span>
@@ -51,10 +67,25 @@
         </div>
 
         <div class="row g-3">
-          <!-- Prospect Name Field -->
-          <div class="col-12 mb-1">
-            <label class="form-label fw-semibold small text-dark">Target Prospect Name</label>
+          <!-- Prospect Name & Contact Details -->
+          <div class="col-md-4 mb-1">
+            <label class="form-label fw-semibold small text-dark">Target Prospect / Company</label>
             <input type="text" id="prospect-name" name="prospect-name" class="form-control rounded-3" value="{{ lead.company_name }}" required>
+          </div>
+          <div class="col-md-4 mb-1">
+            <label class="form-label fw-semibold small text-dark">Primary Contact Name</label>
+            <input type="text" id="workspace-contact-name" class="form-control rounded-3" value="{{ lead.contact_name or '' }}" placeholder="e.g. Jane Smith">
+          </div>
+          <div class="col-md-4 mb-1">
+            <label class="form-label fw-semibold small text-dark">
+              <i class="fa-solid fa-at text-teal me-1"></i> Recipient Email Address
+            </label>
+            <div class="input-group">
+              <input type="email" id="workspace-recipient-email" class="form-control rounded-3" value="{{ lead.email or '' }}" placeholder="recipient@company.com" oninput="syncWorkspaceEmail(this.value)">
+              <button type="button" class="btn btn-outline-teal rounded-3" onclick="saveRecipientEmail({{ lead.id }})" title="Save to Lead Profile">
+                <i class="fa-solid fa-floppy-disk"></i>
+              </button>
+            </div>
           </div>
 
           <!-- Multimodal OCR Document/Image Attachment in Workspace -->
@@ -249,24 +280,69 @@
       </div>
 
       <div class="mb-3">
-        <div class="d-flex justify-content-between align-items-center">
-          <label class="form-label fw-semibold small text-dark mb-1">Subject Line</label>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label fw-semibold small text-dark mb-0">Subject Line</label>
+          <span class="text-muted small">Editable before sending</span>
         </div>
-        <div id="output-subject" class="form-control rounded-3 fw-semibold bg-white p-2 border" style="min-height: 42px;">{% if emails %}{{ emails[0].subject }}{% endif %}</div>
+        <input type="text" id="output-subject" class="form-control rounded-3 fw-semibold bg-white p-2 border" value="{% if emails %}{{ emails[0].subject }}{% endif %}" placeholder="AI Outreach Subject Line">
       </div>
 
-      <div class="mb-4">
+      <div class="mb-3">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <label class="form-label fw-semibold small text-dark mb-0">Email Body</label>
           <span id="word-count" class="badge bg-light text-muted border">0 words</span>
         </div>
-        <div id="output-body" class="form-control rounded-3 bg-white p-3 border" style="min-height: 180px; white-space: pre-wrap;">{% if emails %}{{ emails[0].body }}{% endif %}</div>
+        <textarea id="output-body" class="form-control rounded-3 bg-white p-3 border" rows="7" placeholder="Generated outreach body...">{% if emails %}{{ emails[0].body }}{% endif %}</textarea>
+      </div>
+
+      <!-- ──────────────── DISPATCH CONFIGURATION (MAILBOX & RECIPIENT) ──────────────── -->
+      <div class="p-3 bg-light rounded-3 border mb-3">
+        <div class="row g-3">
+          <!-- Mailbox (Sender / From Account) -->
+          <div class="col-md-6">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <label class="form-label fw-semibold small text-dark mb-0">
+                <i class="fa-solid fa-inbox text-teal me-1"></i> From (Sender Mailbox)
+              </label>
+              <button type="button" class="btn btn-sm btn-link text-teal text-decoration-none p-0 small" onclick="openMailboxSettingsModal()" title="Edit SMTP Settings">
+                <i class="fa-solid fa-gear me-1"></i> Configure Mailbox
+              </button>
+            </div>
+            <div class="input-group">
+              <input type="email" id="sender-mailbox" class="form-control rounded-3" value="{{ mailbox.sender_email if mailbox else 'aipowerdsales@gmail.com' }}" placeholder="sender@company.com">
+              <button type="button" class="btn btn-outline-secondary rounded-3" onclick="openMailboxSettingsModal()" title="Edit Mailbox SMTP Settings">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+            </div>
+            <div class="form-text small">Dispatched via: <strong>{{ mailbox.smtp_host if mailbox else 'smtp.gmail.com' }}:{{ mailbox.smtp_port if mailbox else 587 }}</strong></div>
+          </div>
+
+          <!-- Recipient Mail (To Account) -->
+          <div class="col-md-6">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <label class="form-label fw-semibold small text-dark mb-0">
+                <i class="fa-solid fa-paper-plane text-teal me-1"></i> To (Recipient Email)
+              </label>
+              <button type="button" class="btn btn-sm btn-link text-teal text-decoration-none p-0 small" onclick="saveRecipientEmail({{ lead.id }})" title="Save to Lead Profile">
+                <i class="fa-solid fa-floppy-disk me-1"></i> Save to Profile
+              </button>
+            </div>
+            <div class="input-group">
+              <input type="email" id="recipient-email" class="form-control rounded-3" value="{{ lead.email or '' }}" placeholder="prospect@company.com" oninput="syncBottomEmail(this.value)">
+              <button type="button" class="btn btn-outline-teal rounded-3" onclick="saveRecipientEmail({{ lead.id }})" title="Save Recipient Email">
+                <i class="fa-solid fa-check"></i>
+              </button>
+            </div>
+            <div class="form-text small">Change recipient email anytime before dispatching.</div>
+          </div>
+        </div>
       </div>
 
       <div class="d-flex flex-wrap align-items-center justify-content-between pt-3 border-top gap-2">
-        <span class="text-muted small">
-          Recipient: <strong>{{ lead.email or 'No email on file' }}</strong>
-        </span>
+        <div class="text-muted small">
+          <i class="fa-solid fa-shield-halved text-success me-1"></i>
+          Grounding evaluated by LangGraph guard agent before SMTP dispatch.
+        </div>
         <button id="sendEmailBtn" class="btn btn-teal btn-pill px-4 py-2" onclick="sendEmailSMTP({{ lead.id }})">
           <i class="fa-solid fa-paper-plane me-1"></i> Send Email via SMTP
         </button>

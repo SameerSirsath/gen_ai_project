@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
 
-from app.models.db import db, CompanyProfile, Lead, LeadContext, EmailLog, ApiKey, User
+from app.models.db import db, CompanyProfile, Lead, LeadContext, EmailLog, ApiKey, User, Mailbox
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -194,23 +194,26 @@ def api_keys_view():
 def leads_list():
     """Renders the Leads Management table view."""
     leads = Lead.query.order_by(Lead.created_at.desc()).all()
-    return render_template("leads.html", leads=leads)
+    mailbox = Mailbox.query.filter_by(is_active=True).first() or Mailbox.query.first()
+    return render_template("leads.html", leads=leads, mailbox=mailbox)
 
 
 @dashboard_bp.route("/leads/<int:lead_id>", methods=["GET"])
 @dashboard_bp.route("/leads/<int:lead_id>/workspace", methods=["GET"])
 def lead_detail(lead_id: int):
     """Renders the AI Agent Workspace for a specific lead."""
-    lead = Lead.query.get(lead_id)
+    lead = db.session.get(Lead, lead_id) if hasattr(db.session, "get") else Lead.query.get(lead_id)
     if not lead:
         abort(404)
 
     contexts = LeadContext.query.filter_by(lead_id=lead_id).order_by(LeadContext.created_at.desc()).all()
     emails = EmailLog.query.filter_by(lead_id=lead_id).order_by(EmailLog.created_at.desc()).all()
+    mailbox = Mailbox.query.filter_by(is_active=True).first() or Mailbox.query.first()
 
     return render_template(
         "lead_workspace.html",
         lead=lead,
         contexts=contexts,
         emails=emails,
+        mailbox=mailbox,
     )

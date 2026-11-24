@@ -21,12 +21,15 @@ from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 
-# Preferred Gemini models ordered by confirmed Google API support, high speed & accuracy
+# Model lists ordered by confirmed provider API support, high speed & accuracy
+GROQ_MODELS = [
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.6-27b",
+]
+
 GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-1.5-flash",
-    "gemini-flash-latest",
+    "gemini-3.6-flash",
+    "gemini-3.1-pro-preview",
 ]
 
 FERNET_KEY = b"TmFqt9LDklXd67U9bNzVYkF3rkROLfYbYjxbvsTOLEg="
@@ -112,127 +115,118 @@ def get_active_keys(provider: str) -> List[str]:
 
 def call_llm(prompt: str, system: str = "", max_tokens: int = 1800) -> str:
     """
-    Calls the LLM using active Gemini keys with intelligent automatic fallback
-    across keys and models. If all Gemini keys fail or are rate-limited,
-    cascades to Groq keys.
-    Configured with generous token limit (default 1800) to produce complete,
-    formal, end-to-end sales emails without truncation.
+    Calls the LLM using active Groq and Gemini keys with intelligent automatic fallback
+    across models and keys. Handles HTTP 404 (model not found) by switching to the next model,
+    and HTTP 429 (rate limit) by rotating to the next API key.
     """
-    gemini_keys = get_active_keys("gemini")
     groq_keys = get_active_keys("groq")
+    gemini_keys = get_active_keys("gemini")
 
-    # 1. Primary: Gemini Keys with Fallback Pool
-    if gemini_keys:
-        for key_idx, key in enumerate(gemini_keys, start=1):
-            for model_name in GEMINI_MODELS:
-                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    # 1. Try Groq models
+    for model_id in GROQ_MODELS:
+        for i, key in enumerate(groq_keys, start=1):
+            try:
+                groq_url = "https://api.groq.com/openai/v1/chat/completions"
+                messages = []
+                if system:
+                    messages.append({"role": "system", "content": system})
+                messages.append({"role": "user", "content": prompt})
+
+                groq_payload = {
+                    "model": model_id,
+                    "messages": messages,
+                    "temperature": 0.5,
+                    "max_tokens": max(max_tokens, 1024),
+                }
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                }
+
+                with httpx.Client(timeout=30.0) as client:
+                    response = client.post(groq_url, headers=headers, json=groq_payload)
+
+                if response.status_code == 200:
+                    print(f"[Router] Success using Groq with model {model_id}.")
+                    logger.info(f"[Router] Success using Groq with model {model_id}.")
+                    return response.json()["choices"][0]["message"]["content"]
+                elif response.status_code == 404:
+                    print(f"[Router] Model {model_id} not found (404). Switching to fallback model...")
+                    logger.warning(f"[Router] Model {model_id} not found (404). Switching to fallback model...")
+                    break
+                elif response.status_code == 429:
+                    print(f"[Router] Groq key {i} rate limited (429). Rotating key...")
+                    logger.warning(f"[Router] Groq key {i} rate limited (429). Rotating key...")
+                    continue
+                else:
+                    logger.warning(
+                        f"[Router] Groq key {i} with {model_id} returned HTTP {response.status_code}: {response.text[:120]}"
+                    )
+                    continue
+            except Exception as e:
+                logger.warning(f"[Router] Groq key {i} encountered error: {e}")
+                continue
+
+    # 2. Try Gemini models
+    for model_id in GEMINI_MODELS:
+        for i, key in enumerate(gemini_keys, start=1):
+            try:
+                gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {
                         "temperature": 0.35,
-                        "maxOutputTokens": max_tokens,  # Ample tokens for complete formal outreach
+                        "maxOutputTokens": max_tokens,
                         "topP": 0.90,
                     }
                 }
                 if system:
                     payload["systemInstruction"] = {"parts": [{"text": system}]}
 
-                try:
-                    with httpx.Client(timeout=10.0) as client:
-                        resp = client.post(
-                            gemini_url,
-                            headers={"Content-Type": "application/json"},
-                            params={"key": key},
-                            json=payload
-                        )
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            candidates = data.get("candidates", [])
-                            if candidates and "content" in candidates[0]:
-                                parts = candidates[0]["content"].get("parts", [])
-                                if parts and "text" in parts[0]:
-                                    logger.info(f"Gemini API call succeeded [Key #{key_idx}, Model: {model_name}].")
-                                    return parts[0]["text"]
-                        elif resp.status_code in (429, 403):
-                            logger.warning(
-                                f"Gemini Key #{key_idx} hit quota/limit (HTTP {resp.status_code}). "
-                                f"Switching to next API key immediately..."
-                            )
-                            break  # Move to next key immediately on rate limit
-                        else:
-                            logger.warning(
-                                f"Gemini Key #{key_idx} with {model_name} returned HTTP {resp.status_code}: "
-                                f"{resp.text[:120]}. Trying alternative model/key..."
-                            )
-                except httpx.TimeoutException:
-                    logger.warning(f"Gemini Key #{key_idx} ({model_name}) timed out. Trying alternative...")
+                with httpx.Client(timeout=30.0) as client:
+                    response = client.post(
+                        gemini_url,
+                        headers={"Content-Type": "application/json"},
+                        json=payload,
+                    )
+
+                if response.status_code == 200:
+                    print(f"[Router] Success using Gemini with model {model_id}.")
+                    logger.info(f"[Router] Success using Gemini with model {model_id}.")
+                    return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                elif response.status_code == 404:
+                    print(f"[Router] Model {model_id} not found (404). Switching to fallback model...")
+                    logger.warning(f"[Router] Model {model_id} not found (404). Switching to fallback model...")
+                    break
+                elif response.status_code == 429:
+                    print(f"[Router] Gemini key {i} rate limited (429). Rotating key...")
+                    logger.warning(f"[Router] Gemini key {i} rate limited (429). Rotating key...")
                     continue
-                except Exception as e:
-                    logger.warning(f"Gemini Key #{key_idx} encountered error: {e}. Trying alternative...")
+                else:
+                    logger.warning(
+                        f"[Router] Gemini key {i} with {model_id} returned HTTP {response.status_code}: {response.text[:120]}"
+                    )
                     continue
+            except Exception as e:
+                logger.warning(f"[Router] Gemini key {i} encountered error: {e}")
+                continue
 
-    # 2. Secondary: Groq Keys Fallback
-    if groq_keys:
-        groq_url = "https://api.groq.com/openai/v1/chat/completions"
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        groq_payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": messages,
-            "temperature": 0.5,
-            "max_tokens": max_tokens,
-        }
-
-        with httpx.Client(timeout=15.0) as client:
-            for idx, key in enumerate(groq_keys, start=1):
-                try:
-                    headers = {
-                        "Authorization": f"Bearer {key}",
-                        "Content-Type": "application/json",
-                    }
-                    resp = client.post(groq_url, headers=headers, json=groq_payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        content = data["choices"][0]["message"]["content"]
-                        logger.info(f"Groq API call succeeded using key #{idx}.")
-                        return content
-                    else:
-                        logger.warning(f"Groq key #{idx} returned HTTP {resp.status_code}. Falling back...")
-                except Exception as e:
-                    logger.warning(f"Groq key #{idx} failed: {e}. Falling back...")
-                    continue
-
-    # 3. Deterministic Safety Fallback (Guarantees zero-crash execution during live jury evaluation)
-    logger.error("All Gemini and Groq API keys exhausted or rate-limited. Activating deterministic emergency fallback.")
-    return (
-        '{"pain_points": ["Operational scalability constraints", "Inefficient sales research workflows"], '
-        '"recent_news": ["Strategic corporate growth initiatives"], '
-        '"relevance_score": 0.88, '
-        '"subject": "Accelerating Outreach Efficiency", '
-        '"body": "Noticed your team\'s recent operational expansion. Many sales organizations face research latency when scaling outbound pipeline. We help enterprise teams cut prospect prep time by 90% with grounded AI automation. Open to a brief 5-minute chat this Thursday?", '
-        '"claims_used": ["operational expansion", "cut prospect prep time by 90%"], '
-        '"is_grounded": true, '
-        '"flagged_claims": [], '
-        '"reasoning": "Claims aligned with verified enterprise sales automation profile."}'
-    )
+    raise RuntimeError("All API keys and fallback models exhausted.")
 
 
 def call_gemini_multimodal(prompt: str, mime_type: str, base64_data: str) -> str:
     """
     Calls Gemini Vision / Multimodal model to extract text, tables, and company
     intelligence from attached images (PNG/JPG) or documents.
-    Rotates across active Gemini keys with automatic failover.
+    Rotates across fallback models and active Gemini keys.
     """
     gemini_keys = get_active_keys("gemini")
     if not gemini_keys:
         return "No active Gemini keys available for multimodal analysis."
 
-    for key_idx, key in enumerate(gemini_keys, start=1):
-        for model_name in GEMINI_MODELS:
-            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+    for model_name in GEMINI_MODELS:
+        for i, key in enumerate(gemini_keys, start=1):
+            gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={key}"
             payload = {
                 "contents": [
                     {
@@ -254,26 +248,31 @@ def call_gemini_multimodal(prompt: str, mime_type: str, base64_data: str) -> str
             }
 
             try:
-                with httpx.Client(timeout=10.0) as client:
-                    resp = client.post(
+                with httpx.Client(timeout=30.0) as client:
+                    response = client.post(
                         gemini_url,
                         headers={"Content-Type": "application/json"},
-                        params={"key": key},
                         json=payload,
                     )
-                    if resp.status_code == 200:
-                        data = resp.json()
+                    if response.status_code == 200:
+                        data = response.json()
                         candidates = data.get("candidates", [])
                         if candidates and "content" in candidates[0]:
                             parts = candidates[0]["content"].get("parts", [])
                             if parts and "text" in parts[0]:
-                                logger.info(f"Gemini Multimodal succeeded [Key #{key_idx}, Model: {model_name}].")
+                                print(f"[Router] Success using Gemini with model {model_name}.")
+                                logger.info(f"Gemini Multimodal succeeded [Key #{i}, Model: {model_name}].")
                                 return parts[0]["text"]
-                    elif resp.status_code in (429, 403):
-                        logger.warning(f"Gemini Key #{key_idx} rate-limited on multimodal. Switching key...")
+                    elif response.status_code == 404:
+                        print(f"[Router] Model {model_name} not found (404). Switching to fallback model...")
+                        logger.warning(f"[Router] Model {model_name} not found (404). Switching to fallback model...")
                         break
+                    elif response.status_code == 429:
+                        print(f"[Router] Gemini key {i} rate limited (429). Rotating key...")
+                        logger.warning(f"[Router] Gemini key {i} rate limited (429). Rotating key...")
+                        continue
             except Exception as e:
-                logger.warning(f"Gemini multimodal attempt failed on key #{key_idx}: {e}")
+                logger.warning(f"Gemini multimodal attempt failed on key #{i}: {e}")
                 continue
 
     return "Failed to extract content via multimodal vision across all keys."

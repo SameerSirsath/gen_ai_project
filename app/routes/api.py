@@ -7,8 +7,9 @@ from __future__ import annotations
 import logging
 from flask import Blueprint, request, jsonify
 
-from app.models.db import db, ApiKey, Lead, LeadContext, CompanyProfile, Company
+from app.models.db import db, ApiKey, Lead, LeadContext, CompanyProfile, Company, Mailbox
 from app.services.nlp_pipeline import process_and_sync_to_chroma
+from app.services.smtp_service import test_smtp_connection
 from pipeline.orchestrator import run_agent_pipeline
 
 logger = logging.getLogger(__name__)
@@ -237,4 +238,99 @@ def generate_outreach():
             "is_grounded": False,
             "flagged_claims": [str(e)],
         }), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. MAILBOX SETTINGS & SMTP CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_bp.route("/mailbox", methods=["GET"])
+def get_mailbox():
+    """Returns the primary active outbound sender mailbox configuration."""
+    mailbox = Mailbox.query.filter_by(is_active=True).first()
+    if not mailbox:
+        mailbox = Mailbox.query.first()
+    if not mailbox:
+        return jsonify({"success": False, "error": "No mailbox configured."}), 404
+    return jsonify({"success": True, "mailbox": mailbox.to_dict(mask_pass=True)}), 200
+
+
+@api_bp.route("/mailbox", methods=["POST", "PUT"])
+def update_mailbox():
+    """Creates or updates the primary active sender mailbox."""
+    data = request.get_json(silent=True) or {}
+    sender_name = data.get("sender_name", "").strip() or "Sales Outreach"
+    sender_email = data.get("sender_email", "").strip()
+    smtp_host = data.get("smtp_host", "").strip() or "smtp.gmail.com"
+    smtp_port = int(data.get("smtp_port") or 587)
+    smtp_user = data.get("smtp_user", "").strip() or sender_email
+    smtp_pass = data.get("smtp_pass", "").strip()
+    use_tls = bool(data.get("use_tls", True))
+
+    if not sender_email or "@" not in sender_email:
+        return jsonify({"success": False, "error": "Valid sender email address is required."}), 400
+
+    mailbox = Mailbox.query.filter_by(is_active=True).first() or Mailbox.query.first()
+    if not mailbox:
+        if not smtp_pass:
+            return jsonify({"success": False, "error": "SMTP password/app password is required for new mailbox."}), 400
+        mailbox = Mailbox(
+            sender_name=sender_name,
+            sender_email=sender_email,
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            smtp_user=smtp_user,
+            smtp_pass=smtp_pass,
+            use_tls=use_tls,
+            is_active=True
+        )
+        db.session.add(mailbox)
+    else:
+        mailbox.sender_name = sender_name
+        mailbox.sender_email = sender_email
+        mailbox.smtp_host = smtp_host
+        mailbox.smtp_port = smtp_port
+        mailbox.smtp_user = smtp_user
+        if smtp_pass and not smtp_pass.startswith("•"):
+            mailbox.smtp_pass = smtp_pass
+        mailbox.use_tls = use_tls
+        mailbox.is_active = True
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "message": "Mailbox settings updated successfully!",
+        "mailbox": mailbox.to_dict(mask_pass=True)
+    }), 200
+
+
+@api_bp.route("/mailbox/test", methods=["POST"])
+def test_mailbox():
+    """Tests SMTP connection for the mailbox."""
+    data = request.get_json(silent=True) or {}
+
+    host = data.get("smtp_host", "").strip()
+    port = int(data.get("smtp_port") or 587)
+    user = data.get("smtp_user", "").strip()
+    password = data.get("smtp_pass", "").strip()
+    use_tls = bool(data.get("use_tls", True))
+
+    # If password is empty or masked, read from saved DB mailbox
+    if not password or password.startswith("•"):
+        mb = Mailbox.query.filter_by(is_active=True).first() or Mailbox.query.first()
+        if mb:
+            host = host or mb.smtp_host
+            port = port or mb.smtp_port
+            user = user or mb.smtp_user
+            password = mb.smtp_pass
+
+    test_res = test_smtp_connection(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        use_tls=use_tls
+    )
+    status_code = 200 if test_res.get("success") else 400
+    return jsonify(test_res), status_code
 

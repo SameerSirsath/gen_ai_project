@@ -57,7 +57,8 @@ class Lead(db.Model):
     contact_name = db.Column(db.String(150), default="")
     email = db.Column(db.String(255), unique=True)
     website_url = db.Column(db.String(500), default="")
-    status = db.Column(db.String(50), default="Pending")  # 'Pending', 'Processing', 'Drafted', 'Sent', 'Failed'
+    status = db.Column(db.String(50), default="Pending")  # 'Pending', 'Processing', 'Drafted', 'Sent', 'Failed', 'Archived'
+    is_archived = db.Column(db.Boolean, default=False)
     mode = db.Column(db.String(50), default="Manual")      # 'Auto', 'Manual'
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
@@ -72,6 +73,7 @@ class Lead(db.Model):
             "email": self.email,
             "website_url": self.website_url,
             "status": self.status,
+            "is_archived": bool(self.is_archived),
             "mode": self.mode,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at else None,
             "context_count": len(self.contexts) if self.contexts else 0,
@@ -156,6 +158,43 @@ class ApiKey(db.Model):
             "provider": self.provider,
             "key_alias": self.key_alias,
             "key_value": masked_val,
+            "is_active": self.is_active,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
+
+class Mailbox(db.Model):
+    """
+    Represents an outbound sender mailbox / SMTP account configuration.
+    Allows users to dynamically edit sender credentials, host, port, and From address.
+    """
+    __tablename__ = "mailboxes"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    sender_name = db.Column(db.String(150), default="Sales Outreach")
+    sender_email = db.Column(db.String(255), nullable=False)
+    smtp_host = db.Column(db.String(255), default="smtp.gmail.com")
+    smtp_port = db.Column(db.Integer, default=587)
+    smtp_user = db.Column(db.String(255), nullable=False)
+    smtp_pass = db.Column(EncryptedText, nullable=False)  # Encrypted automatically via Fernet
+    use_tls = db.Column(db.Boolean, default=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
+
+    def to_dict(self, mask_pass: bool = True) -> Dict[str, Any]:
+        val = self.smtp_pass or ""
+        masked_pwd = (val[:2] + "••••••••" + val[-2:]) if (mask_pass and len(val) >= 4) else ("••••••••" if mask_pass else val)
+        return {
+            "id": self.id,
+            "sender_name": self.sender_name,
+            "sender_email": self.sender_email,
+            "smtp_host": self.smtp_host,
+            "smtp_port": self.smtp_port,
+            "smtp_user": self.smtp_user,
+            "smtp_pass": masked_pwd,
+            "use_tls": self.use_tls,
             "is_active": self.is_active,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None,
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
